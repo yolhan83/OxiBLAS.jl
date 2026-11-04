@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: Apache-2.0
+function _block_residual!(R,A,X,B,product)
+    _native_mm!(product,A,X)
+    for i in eachindex(R,B)
+        R[i]=B[i]-product[i]
+    end
+    [nrm2(view(R,:,j)) for j in axes(R,2)]
+end
+function _block_targets(B,rtol,atol)
+    [max(atol,rtol*nrm2(view(B,:,j))) for j in axes(B,2)]
+end
+function _block_fallback(A,B,X,targets,preconditioner,budget,solver)
+    results=Any[]
+    for j in axes(B,2)
+        result=solver(A,view(B,:,j);x0=copy(view(X,:,j)),maxiter=budget,rtol=zero(eltype(targets)),atol=targets[j],preconditioner)
+        X[:,j]=result.x; push!(results,result)
+    end
+    residuals=[result.residual for result in results]
+    (;x=X,converged=all(result.converged for result in results),residuals,fallback=true,column_results=results)
+end
+function _block_full_rank(A)
+    isempty(A) && return true
+    F=qr_pivoted(A;threaded=false); d=[abs(F.factors[i,i]) for i in 1:min(size(A)...)]; scale=maximum(d;init=zero(eltype(d)))
+    all(x->x>64eps(real(eltype(A)))*max(size(A)...)*scale,d)
+end
+"""Coupled block preconditioned CG for multiple Hermitian positive-definite
+systems. Rank loss in the block Gram system triggers explicit scalar PCG
+continuation from the current iterates, rather than inverting a singular block.
+"""
+function block_cg(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B)),maxiter=2size(A,1),
+                  rtol=sqrt(eps(real(T))),atol=zero(real(T)),preconditioner=nothing) where {T<:NativeFloat}
+    n=_square(A); Base.require_one_based_indexing(B,x0)
+    size(B,1)==n && size(x0)==size(B) && min(maxiter,rtol,atol)>=0 || throw(ArgumentError("invalid block CG dimensions/options"))
+    _check_preconditioner(preconditioner,n); targets=_block_targets(B,rtol,atol); X=copy(x0); R=similar(B); product=similar(B); s=size(B,2)
+    residuals=_block_residual!(R,A,X,B,product); iterations=0
+    all(residuals.<=targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+    Z=similar(B)
+    for j in 1:s
+        _precondition!(view(Z,:,j),view(R,:,j),preconditioner)
+    end
+    P=copy(Z); gram=_mm(adjoint(R),Z)
+    for iteration in 1:maxiter
+        _native_mm!(product,A,P); H=_mm(adjoint(P),product)
+        if !_block_full_rank(H) || !_block_full_rank(gram)
+            return merge(_block_fallback(A,B,X,targets,preconditioner,max(0,maxiter-iterations),pcg),(;iterations))
+        end
+        alpha=solve(lu_factor(H;threaded=false),gram); X .+= _mm(P,alpha)
+        residuals=_block_residual!(R,A,X,B,product); iterations=iteration
+        all(residuals.<=targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+        for j in 1:s
+            _precondition!(view(Z,:,j),view(R,:,j),preconditioner)
+        end
+        next=_mm(adjoint(R),Z); beta=solve(lu_factor(gram;threaded=false),next)
+        P=Z+_mm(P,beta); gram=next
+    end
+    (;x=X,converged=false,residuals,iterations,fallback=false)
+end
+
+"""Restarted right-preconditioned block GMRES with block Arnoldi and native
+minimum-norm projected least squares. Rank loss falls back to independent
+flexible GMRES continuations; the returned `fallback` flag makes this explicit.
+`maxiter` counts block Arnoldi steps.
+"""
+function block_gmres(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B)),restart=10,maxiter=2size(A,1),
+                     rtol=sqrt(eps(real(T))),atol=zero(real(T)),preconditioner=nothing) where {T<:NativeFloat}
+    n=_square(A); Base.require_one_based_indexing(B,x0)
+    size(B,1)==n && size(B)==size(x0) && min(maxiter,rtol,atol)>=0 && restart>=1 || throw(ArgumentError("invalid block GMRES dimensions/options"))
+    preconditioner isa Function || _check_preconditioner(preconditioner,n)
+    s=size(B,2); targets=_block_targets(B,rtol,atol); X=copy(x0); R=similar(B); product=similar(B); iterations=0
+    residuals=_block_residual!(R,A,X,B,product)
+    all(residuals.<=targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+    while iterations<maxiter
+        if n<s || !_block_full_rank(R)
+            return merge(_block_fallback(A,B,X,targets,preconditioner,(maxiter-iterations)*s,fgmres),(;iterations))
+        end
+        q=min(restart,maxiter-iterations); V=zeros(T,n,(q+1)*s); Z=zeros(T,n,q*s); H=zeros(T,(q+1)*s,q*s)
+        F=qr_factor(R;threaded=false); V[:,1:s]=qr_q(F;columns=s,threaded=false); S=copy(F.R[1:s,:]); base=copy(X); trial=copy(X)
+        for j in 1:q
+            current=(j-1)*s+1:j*s; following=j*s+1:(j+1)*s
+            for (k,col) in enumerate(current)
+                _apply_preconditioner!(view(Z,:,col),view(V,:,col),preconditioner,iterations*s+k)
+            end
+            W=Matrix{T}(undef,n,s); _native_mm!(W,A,view(Z,:,current))
+            for _ in 1:2, i in 1:j
+                rows=(i-1)*s+1:i*s; hij=_mm(adjoint(view(V,:,rows)),W)
+                H[rows,current].+=hij; W .-= _mm(view(V,:,rows),hij)
+            end
+            fullrank=n>=(j+1)*s && _block_full_rank(W); factor=qr_factor(W;threaded=false)
+            H[following,current]=factor.R[1:s,:]
+            fullrank && (V[:,following]=qr_q(factor;columns=s,threaded=false))
+            right=zeros(T,(j+1)*s,s); right[1:s,:]=S
+            projected=complete_orthogonal(view(H,1:(j+1)*s,1:j*s);threaded=false)
+            coefficients=solve(projected,right); trial=base+_mm(view(Z,:,1:j*s),coefficients)
+            residuals=_block_residual!(R,A,trial,B,product); iterations+=1
+            all(residuals.<=targets) && return (;x=trial,converged=true,residuals,iterations,fallback=false)
+            iterations>=maxiter && return (;x=trial,converged=false,residuals,iterations,fallback=false)
+            if !fullrank
+                return merge(_block_fallback(A,B,trial,targets,preconditioner,(maxiter-iterations)*s,fgmres),(;iterations))
+            end
+        end
+        X=trial
+    end
+    (;x=X,converged=false,residuals,iterations,fallback=false)
+end

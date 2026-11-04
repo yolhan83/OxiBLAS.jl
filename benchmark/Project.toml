@@ -1,0 +1,18 @@
+# High-level suite (run.jl): Chairmarks and the references. BenchmarkTools is
+# kept for the archived campaigns (archive/). OpenBLAS_jll and
+# AppleAccelerate are references only: OxiBLAS itself never calls them.
+[deps]
+AppleAccelerate = "13e28ba4-7ad8-5781-acae-3021b1ed3924"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OpenBLAS_jll = "4536629a-c528-5b80-bd46-f80d51c5b363"
+OxiBLAS = "21564215-86dc-4d3d-abe9-f5572d28b8da"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+TensorOperations = "6aa20fa7-93e2-5fca-9bc0-fbd0db3c71a2"
+
+[sources]
+OxiBLAS = {path = ".."}

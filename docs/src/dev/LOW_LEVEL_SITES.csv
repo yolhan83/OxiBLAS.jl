@@ -1,0 +1,329 @@
+julia,line,category,status,context
+src/advanced_factorizations.jl,83,simd,site repéré statiquement; pas une validation,@simd for i in j+1:m
+src/advanced_factorizations.jl,127,simd,site repéré statiquement; pas une validation,@simd for i in j+1:m
+src/advanced_factorizations.jl,80,tasks,site repéré statiquement; pas une validation,"_foreach_range(n-j,workers) do columns,_"
+src/advanced_factorizations.jl,205,tasks,site repéré statiquement; pas une validation,"_foreach_range(n-j,workers) do columns,_"
+src/advanced_factorizations.jl,298,tasks,site repéré statiquement; pas une validation,"_foreach_range(n-k,workers) do columns,_"
+src/advanced_factorizations.jl,318,tasks,site repéré statiquement; pas une validation,"_foreach_range(n-k-1,workers) do columns,_"
+src/advanced_factorizations.jl,79,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n-j,Float64(m-j)*(n-j),threaded,262144)"
+src/advanced_factorizations.jl,204,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n-j,Float64(m-j)*(n-j),threaded,262144)"
+src/advanced_factorizations.jl,297,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n-k,Float64(n-k)^2,threaded,262144)"
+src/advanced_factorizations.jl,317,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n-k-1,Float64(n-k-1)^2,threaded,262144)"
+src/advanced_factorizations.jl,81,inbounds,site repéré statiquement; pas une validation,@inbounds for c in columns
+src/advanced_factorizations.jl,121,inbounds,site repéré statiquement; pas une validation,@inbounds for col in columns
+src/autotuning.jl,37,float_cast,site repéré statiquement; pas une validation,"push!(samples,Float64(time_ns()-start))"
+src/batched.jl,31,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(Cs),workers) do range,worker"
+src/batched.jl,18,float_cast,site repéré statiquement; pas une validation,"mm=max(mm,m); nn=max(nn,n); kk=max(kk,k); work+=Float64(m)*n*k"
+src/compact_blas.jl,37,pointer,site repéré statiquement; pas une validation,"@generated function _compact_axpy_ptr!(y::Ptr{T},a::Ptr{T},n::Int,c::T,::Val{W}) where {T<:RealFloat,W}"
+src/compact_blas.jl,37,pointer,site repéré statiquement; pas une validation,"@generated function _compact_axpy_ptr!(y::Ptr{T},a::Ptr{T},n::Int,c::T,::Val{W}) where {T<:RealFloat,W}"
+src/compact_blas.jl,58,pointer,site repéré statiquement; pas une validation,"unsafe_store!(y,muladd(c,unsafe_load(a,j),unsafe_load(y,j)),j)"
+src/compact_blas.jl,58,pointer,site repéré statiquement; pas une validation,"unsafe_store!(y,muladd(c,unsafe_load(a,j),unsafe_load(y,j)),j)"
+src/compact_blas.jl,58,pointer,site repéré statiquement; pas une validation,"unsafe_store!(y,muladd(c,unsafe_load(a,j),unsafe_load(y,j)),j)"
+src/compact_blas.jl,77,pointer,site repéré statiquement; pas une validation,"GC.@preserve y a _compact_axpy_ptr!(pointer(y,iy),pointer(a,ia),n,c,width)"
+src/compact_blas.jl,77,pointer,site repéré statiquement; pas une validation,"GC.@preserve y a _compact_axpy_ptr!(pointer(y,iy),pointer(a,ia),n,c,width)"
+src/compact_blas.jl,250,pointer,site repéré statiquement; pas une validation,"function _compact_axpy_ptr!(y::Ptr{Complex{R}},a::Ptr{Complex{R}},n::Int,c::Complex{R},::Val{W}) where {R<:RealFloat,W}"
+src/compact_blas.jl,250,pointer,site repéré statiquement; pas une validation,"function _compact_axpy_ptr!(y::Ptr{Complex{R}},a::Ptr{Complex{R}},n::Int,c::Complex{R},::Val{W}) where {R<:RealFloat,W}"
+src/compact_blas.jl,254,pointer,site repéré statiquement; pas une validation,"av=_vload(Ptr{R}(a+p),Val(W)); yv=_vload(Ptr{R}(y+p),Val(W))"
+src/compact_blas.jl,254,pointer,site repéré statiquement; pas une validation,"av=_vload(Ptr{R}(a+p),Val(W)); yv=_vload(Ptr{R}(y+p),Val(W))"
+src/compact_blas.jl,255,pointer,site repéré statiquement; pas une validation,"_vstore(Ptr{R}(y+p),_vadd(yv,_complex_vmul(av,c,Val(W))))"
+src/compact_blas.jl,259,pointer,site repéré statiquement; pas une validation,"unsafe_store!(y,c*unsafe_load(a,j)+unsafe_load(y,j),j)"
+src/compact_blas.jl,259,pointer,site repéré statiquement; pas une validation,"unsafe_store!(y,c*unsafe_load(a,j)+unsafe_load(y,j),j)"
+src/compact_blas.jl,259,pointer,site repéré statiquement; pas une validation,"unsafe_store!(y,c*unsafe_load(a,j)+unsafe_load(y,j),j)"
+src/compact_blas.jl,266,pointer,site repéré statiquement; pas une validation,"function _compact_reduce_ptr!(y::Ptr{T},a::Ptr{T},x::Ptr{T},n,c::T,::Val{H},::Val{W},::Val{Update}) where {T<:NativeFloat,H,W,Update}"
+src/compact_blas.jl,266,pointer,site repéré statiquement; pas une validation,"function _compact_reduce_ptr!(y::Ptr{T},a::Ptr{T},x::Ptr{T},n,c::T,::Val{H},::Val{W},::Val{Update}) where {T<:NativeFloat,H,W,Update}"
+src/compact_blas.jl,266,pointer,site repéré statiquement; pas une validation,"function _compact_reduce_ptr!(y::Ptr{T},a::Ptr{T},x::Ptr{T},n,c::T,::Val{H},::Val{W},::Val{Update}) where {T<:NativeFloat,H,W,Update}"
+src/compact_blas.jl,271,pointer,site repéré statiquement; pas une validation,"av=_vload(Ptr{R}(a+off),Val(W)); xv=_vload(Ptr{R}(x+off),Val(W))"
+src/compact_blas.jl,271,pointer,site repéré statiquement; pas une validation,"av=_vload(Ptr{R}(a+off),Val(W)); xv=_vload(Ptr{R}(x+off),Val(W))"
+src/compact_blas.jl,274,pointer,site repéré statiquement; pas une validation,"yv=_vload(Ptr{R}(y+off),Val(W))"
+src/compact_blas.jl,276,pointer,site repéré statiquement; pas une validation,"_vstore(Ptr{R}(y+off),v)"
+src/compact_blas.jl,291,pointer,site repéré statiquement; pas une validation,"v=unsafe_load(a,j)"
+src/compact_blas.jl,292,pointer,site repéré statiquement; pas une validation,"s=_compact_madd(H ? conj(v) : v,unsafe_load(x,j),s)"
+src/compact_blas.jl,293,pointer,site repéré statiquement; pas une validation,"Update && unsafe_store!(y,_compact_madd(c,v,unsafe_load(y,j)),j)"
+src/compact_blas.jl,293,pointer,site repéré statiquement; pas une validation,"Update && unsafe_store!(y,_compact_madd(c,v,unsafe_load(y,j)),j)"
+src/compact_blas.jl,305,pointer,site repéré statiquement; pas une validation,"yp=Update ? pointer(y,iy) : Ptr{T}(0)"
+src/compact_blas.jl,305,pointer,site repéré statiquement; pas une validation,"yp=Update ? pointer(y,iy) : Ptr{T}(0)"
+src/compact_blas.jl,306,pointer,site repéré statiquement; pas une validation,"return _compact_reduce_ptr!(yp,pointer(a,ia),pointer(x,ix),n,c,Val(H),width,Val(Update))"
+src/compact_blas.jl,306,pointer,site repéré statiquement; pas une validation,"return _compact_reduce_ptr!(yp,pointer(a,ia),pointer(x,ix),n,c,Val(H),width,Val(Update))"
+src/compact_blas.jl,77,gc_preserve,site repéré statiquement; pas une validation,"GC.@preserve y a _compact_axpy_ptr!(pointer(y,iy),pointer(a,ia),n,c,width)"
+src/compact_blas.jl,304,gc_preserve,site repéré statiquement; pas une validation,GC.@preserve y a x begin
+src/compact_blas.jl,37,simd,site repéré statiquement; pas une validation,"@generated function _compact_axpy_ptr!(y::Ptr{T},a::Ptr{T},n::Int,c::T,::Val{W}) where {T<:RealFloat,W}"
+src/compact_blas.jl,81,simd,site repéré statiquement; pas une validation,@inbounds @simd for p in 0:n-1
+src/compact_blas.jl,101,tasks,site repéré statiquement; pas une validation,"_foreach_range(m,workers) do rows,_"
+src/compact_blas.jl,112,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,workers) do columns,_"
+src/compact_blas.jl,141,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,workers) do rows,_"
+src/compact_blas.jl,100,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(m,Float64(n)*(A.kl+A.ku+1),threaded,parallel_threshold)"
+src/compact_blas.jl,111,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n,Float64(n)*(A.kl+A.ku+1),threaded,parallel_threshold)"
+src/compact_blas.jl,136,float_cast,site repéré statiquement; pas une validation,"work=A isa PackedMatrix ? Float64(n)*n : Float64(n)*(2max(A.kl,A.ku)+1)"
+src/compact_blas.jl,136,float_cast,site repéré statiquement; pas une validation,"work=A isa PackedMatrix ? Float64(n)*n : Float64(n)*(2max(A.kl,A.ku)+1)"
+src/compact_blas.jl,15,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:P.n
+src/compact_blas.jl,26,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:size(P,2)"
+src/compact_blas.jl,81,inbounds,site repéré statiquement; pas une validation,@inbounds @simd for p in 0:n-1
+src/compact_blas.jl,103,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in max(1,first(rows)-A.kl):min(n,last(rows)+A.ku)"
+src/compact_blas.jl,113,inbounds,site repéré statiquement; pas une validation,@inbounds for j in columns
+src/compact_blas.jl,142,inbounds,site repéré statiquement; pas une validation,@inbounds for i in rows
+src/compact_blas.jl,154,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/compact_blas.jl,177,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/compact_blas.jl,184,inbounds,site repéré statiquement; pas une validation,@inbounds for j in (forward ? (1:n) : (n:-1:1))
+src/compact_blas.jl,224,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/compact_blas.jl,233,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/compact_blas.jl,311,inbounds,site repéré statiquement; pas une validation,@inbounds for p in 0:n-1
+src/compact_factorizations.jl,216,tasks,site repéré statiquement; pas une validation,"_foreach_range(n-j+1,workers) do rows,_"
+src/compact_factorizations.jl,215,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n-j+1,Float64(n-j+1)*j,threaded,262144)"
+src/divide_conquer.jl,135,tasks,site repéré statiquement; pas une validation,"task=Threads.@spawn _cuppen(left,e[1:h-1],leafsize,budget÷2,maxiter)"
+src/extended_blas.jl,61,tasks,site repéré statiquement; pas une validation,"_foreach_range(jobs,workers) do range,worker"
+src/extended_blas.jl,126,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,workers) do columns,_"
+src/extended_blas.jl,175,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(Cs),capacity) do range,worker"
+src/extended_blas.jl,51,float_cast,site repéré statiquement; pas une validation,"wanted=_operation_workers(cld(m,32)*cld(n,32),Float64(m)*n*k,threaded,config.parallel_threshold)"
+src/extended_blas.jl,60,float_cast,site repéré statiquement; pas une validation,"workers=min(length(w.buffers),_operation_workers(jobs,Float64(m)*n*k,threaded,config.parallel_threshold))"
+src/extended_blas.jl,125,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n,Float64(n)*n*size(aa,2),threaded,config.parallel_threshold)"
+src/extended_blas.jl,167,float_cast,site repéré statiquement; pas une validation,"work=sum(Float64(size(C,1))*size(C,2)*size(As[i],2) for (i,C) in enumerate(Cs))"
+src/factorizations.jl,18,inbounds,site repéré statiquement; pas une validation,@inbounds for firstcol in 1:blocksize:q
+src/factorizations.jl,58,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in axes(L,2), i in j:m"
+src/factorizations.jl,64,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in 1:min(j,m)"
+src/factorizations.jl,103,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:blocksize:n
+src/factorizations.jl,126,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in 1:j-1"
+src/factorizations.jl,158,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:min(m,n)"
+src/factorizations.jl,186,inbounds,site repéré statiquement; pas une validation,@inbounds for j in (adj ? (1:q) : (q:-1:1))
+src/factorizations.jl,214,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in 1:min(m,j)"
+src/gemm.jl,29,pointer,site repéré statiquement; pas une validation,"offset = Int(mod(-UInt(pointer(v)), UInt(128))) ÷ sizeof(T) + 1"
+src/gemm.jl,214,pointer,site repéré statiquement; pas une validation,"function _pack_a!(dst::Ptr{T}, A, ic, pc, ib, kb, mr) where {T<:NativeFloat}"
+src/gemm.jl,217,pointer,site repéré statiquement; pas une validation,"unsafe_store!(dst,v,ii*kb+p*mr+i+1)"
+src/gemm.jl,221,pointer,site repéré statiquement; pas une validation,"function _pack_b!(dst::Ptr{T}, B, pc, jc, kb, jb, nr) where {T<:NativeFloat}"
+src/gemm.jl,224,pointer,site repéré statiquement; pas une validation,"unsafe_store!(dst,v,jj*kb+p*nr+j+1)"
+src/gemm.jl,228,pointer,site repéré statiquement; pas une validation,"function _scalar_micro!(C,ic,jc,a::Ptr{T},b::Ptr{T},k,α,β,mr,nr,ib,jb) where {T<:NativeFloat}"
+src/gemm.jl,228,pointer,site repéré statiquement; pas une validation,"function _scalar_micro!(C,ic,jc,a::Ptr{T},b::Ptr{T},k,α,β,mr,nr,ib,jb) where {T<:NativeFloat}"
+src/gemm.jl,232,pointer,site repéré statiquement; pas une validation,"s=muladd(unsafe_load(a,p*mr+i+1),unsafe_load(b,p*nr+j+1),s)"
+src/gemm.jl,232,pointer,site repéré statiquement; pas une validation,"s=muladd(unsafe_load(a,p*mr+i+1),unsafe_load(b,p*nr+j+1),s)"
+src/gemm.jl,239,pointer,site repéré statiquement; pas une validation,"@generated function _register_micro!(C,ic,jc,a::Ptr{T},b::Ptr{T},k,α,β,::Val{M},::Val{N}) where {T<:NativeFloat,M,N}"
+src/gemm.jl,239,pointer,site repéré statiquement; pas une validation,"@generated function _register_micro!(C,ic,jc,a::Ptr{T},b::Ptr{T},k,α,β,::Val{M},::Val{N}) where {T<:NativeFloat,M,N}"
+src/gemm.jl,244,pointer,site repéré statiquement; pas une validation,"push!(step.args,:($s=muladd(unsafe_load(a,p*$M+$i+1),unsafe_load(b,p*$N+$j+1),$s)))"
+src/gemm.jl,244,pointer,site repéré statiquement; pas une validation,"push!(step.args,:($s=muladd(unsafe_load(a,p*$M+$i+1),unsafe_load(b,p*$N+$j+1),$s)))"
+src/gemm.jl,257,pointer,site repéré statiquement; pas une validation,@inline _can_pointer(C) = false
+src/gemm.jl,258,pointer,site repéré statiquement; pas une validation,"@inline _can_pointer(C::StridedMatrix) = stride(C,1)==1 && stride(C,2)>=max(1,size(C,1))"
+src/gemm.jl,265,pointer,site repéré statiquement; pas une validation,"pa=pointer(buf.a,buf.ai)"
+src/gemm.jl,266,pointer,site repéré statiquement; pas une validation,"pb=pointer(buf.b,buf.bi)"
+src/gemm.jl,280,pointer,site repéré statiquement; pas une validation,if mi==mr && nj==nr && algorithm===:simd && T <: RealFloat && W>1 && _can_pointer(C)
+src/gemm.jl,281,pointer,site repéré statiquement; pas une validation,"cp=pointer(C)+((ic+ii-1)+(jc+jj-1)*stride(C,2))*sizeof(T)"
+src/gemm.jl,283,pointer,site repéré statiquement; pas une validation,elseif mi==mr && nj==nr && algorithm===:simd && T <: Complex && _can_pointer(C)
+src/gemm.jl,284,pointer,site repéré statiquement; pas une validation,"cp=pointer(C)+((ic+ii-1)+(jc+jj-1)*stride(C,2))*sizeof(T)"
+src/gemm.jl,400,pointer,site repéré statiquement; pas une validation,method===:simd && (kind===:scalar || !_can_pointer(C)) && (method=:register)
+src/gemm.jl,264,gc_preserve,site repéré statiquement; pas une validation,GC.@preserve buf C begin
+src/gemm.jl,203,simd,site repéré statiquement; pas une validation,"@simd for i in ic:min(m,ic+config.mc-1)"
+src/gemm.jl,239,simd,site repéré statiquement; pas une validation,"@generated function _register_micro!(C,ic,jc,a::Ptr{T},b::Ptr{T},k,α,β,::Val{M},::Val{N}) where {T<:NativeFloat,M,N}"
+src/gemm.jl,349,tasks,site repéré statiquement; pas une validation,"Threads.@spawn _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(width),Val(r),Val(nr),algorithm)"
+src/gemm.jl,335,float_cast,site repéré statiquement; pas une validation,"nt=threaded && Float64(m)*n*k>=config.parallel_threshold ? min(length(w.buffers),Threads.nthreads()) : 1"
+src/gemm.jl,138,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(C)
+src/gemm.jl,159,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/gemm.jl,186,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in 1:m"
+src/gemm.jl,200,inbounds,site repéré statiquement; pas une validation,"@inbounds for jc in 1:config.nc:n, pc in 1:config.kc:k, ic in 1:config.mc:m"
+src/gemm.jl,215,inbounds,site repéré statiquement; pas une validation,"@inbounds for ii in 0:mr:ib-1, p in 0:kb-1, i in 0:mr-1"
+src/gemm.jl,222,inbounds,site repéré statiquement; pas une validation,"@inbounds for jj in 0:nr:jb-1, p in 0:kb-1, j in 0:nr-1"
+src/gemm.jl,229,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 0:jb-1, i in 0:ib-1"
+src/gemm.jl,252,inbounds,site repéré statiquement; pas une validation,@inbounds $stores
+src/gemm_variants.jl,48,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(jobs),workers) do range,worker"
+src/gemm_variants.jl,92,tasks,site repéré statiquement; pas une validation,"_foreach_range(7,workers) do range,worker"
+src/gemm_variants.jl,31,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(max(1,m*n),Float64(m)*n*k,threaded,config.parallel_threshold)"
+src/gemm_variants.jl,120,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(7,Float64(m)*n*k,threaded,config.parallel_threshold)"
+src/graph_refinement.jl,104,float_cast,site repéré statiquement; pas une validation,fraction=Float64(fraction); imbalance=Float64(imbalance)
+src/graph_refinement.jl,104,float_cast,site repéré statiquement; pas une validation,fraction=Float64(fraction); imbalance=Float64(imbalance)
+src/graph_refinement.jl,115,float_cast,site repéré statiquement; pas une validation,"trace=_fm_refine_bisection!(labels,G,Float64(fraction),Float64(imbalance),Int(passes))"
+src/graph_refinement.jl,115,float_cast,site repéré statiquement; pas une validation,"trace=_fm_refine_bisection!(labels,G,Float64(fraction),Float64(imbalance),Int(passes))"
+src/graph_refinement.jl,117,float_cast,site repéré statiquement; pas une validation,"_refine_bisection!(labels,G,Float64(fraction),Float64(imbalance),Int(passes))"
+src/graph_refinement.jl,117,float_cast,site repéré statiquement; pas une validation,"_refine_bisection!(labels,G,Float64(fraction),Float64(imbalance),Int(passes))"
+src/hermitian_eigen.jl,111,simd,site repéré statiquement; pas une validation,"@inbounds @simd for row in axes(Z,1)"
+src/hermitian_eigen.jl,24,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in 1:n"
+src/hermitian_eigen.jl,28,inbounds,site repéré statiquement; pas une validation,@inbounds for idx in eachindex(S)
+src/hermitian_eigen.jl,32,inbounds,site repéré statiquement; pas une validation,@inbounds for k in 1:n-2
+src/hermitian_eigen.jl,60,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 1:n-1
+src/hermitian_eigen.jl,70,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in axes(Q,2), i in axes(Q,1)"
+src/hermitian_eigen.jl,80,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 1:n
+src/hermitian_eigen.jl,111,inbounds,site repéré statiquement; pas une validation,"@inbounds @simd for row in axes(Z,1)"
+src/hermitian_eigen.jl,148,inbounds,site repéré statiquement; pas une validation,@inbounds for k in lo:hi-1
+src/hessenberg.jl,87,simd,site repéré statiquement; pas une validation,@simd for i in rows
+src/hessenberg.jl,93,simd,site repéré statiquement; pas une validation,@simd for i in rows
+src/hessenberg.jl,13,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 1:n
+src/hessenberg.jl,36,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in axes(F,2), i in axes(F,1)"
+src/hessenberg.jl,57,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 2:length(v)
+src/hessenberg.jl,66,inbounds,site repéré statiquement; pas une validation,@inbounds for j in cols
+src/hessenberg.jl,82,inbounds,site repéré statiquement; pas une validation,@inbounds for i in rows
+src/hessenberg.jl,85,inbounds,site repéré statiquement; pas une validation,@inbounds for t in eachindex(v)
+src/hessenberg.jl,91,inbounds,site repéré statiquement; pas une validation,@inbounds for t in eachindex(v)
+src/hessenberg.jl,113,inbounds,site repéré statiquement; pas une validation,@inbounds for k in 1:n-2
+src/hessenberg.jl,132,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in 1:min(n,j+1)"
+src/hessenberg.jl,144,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:width
+src/hessenberg.jl,190,inbounds,site repéré statiquement; pas une validation,@inbounds for idx in eachindex(v)
+src/hessenberg.jl,241,inbounds,site repéré statiquement; pas une validation,@inbounds for k in (reverse ? (p:-1:1) : (1:p))
+src/level1.jl,14,simd,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(y)
+src/level1.jl,151,float_cast,site repéré statiquement; pas une validation,s=Float64(initial)
+src/level1.jl,153,float_cast,site repéré statiquement; pas une validation,"s=_arithmetic_madd(Float64(x[i]),Float64(y[i]),s)"
+src/level1.jl,153,float_cast,site repéré statiquement; pas une validation,"s=_arithmetic_madd(Float64(x[i]),Float64(y[i]),s)"
+src/level1.jl,167,float_cast,site repéré statiquement; pas une validation,"Float32(_wide_dot(x,y,alpha))"
+src/level1.jl,14,inbounds,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(y)
+src/level1.jl,23,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(y)
+src/level1.jl,32,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(x)
+src/level1.jl,40,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(x)
+src/level1.jl,48,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(x)
+src/level1.jl,56,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(x)
+src/level1.jl,67,inbounds,site repéré statiquement; pas une validation,@inbounds for i in lo:hi
+src/level1.jl,108,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 2:length(x)
+src/level1.jl,122,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(x)
+src/level1.jl,152,inbounds,site repéré statiquement; pas une validation,@inbounds for i in eachindex(x)
+src/level1_parallel.jl,8,simd,site repéré statiquement; pas une validation,@inbounds @simd for i in range
+src/level1_parallel.jl,7,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(y),workers) do range,_"
+src/level1_parallel.jl,17,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(x),workers) do range,_"
+src/level1_parallel.jl,24,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(x),workers) do range,worker"
+src/level1_parallel.jl,36,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(x),workers) do range,worker"
+src/level1_parallel.jl,48,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(x),workers) do range,worker"
+src/level1_parallel.jl,8,inbounds,site repéré statiquement; pas une validation,@inbounds @simd for i in range
+src/level1_parallel.jl,26,inbounds,site repéré statiquement; pas une validation,@inbounds for i in range
+src/level2.jl,30,simd,site repéré statiquement; pas une validation,@simd for i in rows
+src/level2.jl,16,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(y),workers) do rows,_"
+src/level2.jl,27,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(y),workers) do rows,_"
+src/level2.jl,83,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,workers) do rows,_"
+src/level2.jl,118,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,workers) do rows,_"
+src/level2.jl,14,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(length(y),Float64(length(y))*length(x),threaded,parallel_threshold)"
+src/level2.jl,116,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(n,Float64(n)*n,threaded,parallel_threshold)"
+src/level2.jl,17,inbounds,site repéré statiquement; pas une validation,@inbounds for i in rows
+src/level2.jl,28,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:length(xx)
+src/level2.jl,72,inbounds,site repéré statiquement; pas une validation,@inbounds for i in (upper ? (1:j-1) : (j+1:n))
+src/level2.jl,89,inbounds,site repéré statiquement; pas une validation,@inbounds for i in lo:hi
+src/level2.jl,94,inbounds,site repéré statiquement; pas une validation,@inbounds for i in (upper ? (1:j-1) : (j+1:n))
+src/level2.jl,119,inbounds,site repéré statiquement; pas une validation,@inbounds for i in rows
+src/level2.jl,140,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in eachindex(yy), i in eachindex(xx)"
+src/level2.jl,164,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (1:j) : (j:n))"
+src/level2.jl,198,inbounds,site repéré statiquement; pas une validation,@inbounds for j in (upper ? (1:n) : (n:-1:1))
+src/level2.jl,207,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 1:n
+src/level2.jl,233,inbounds,site repéré statiquement; pas une validation,@inbounds for i in (upper ? (n:-1:1) : (1:n))
+src/level3.jl,150,simd,site repéré statiquement; pas une validation,@simd for i in 1:m
+src/level3.jl,223,tasks,site repéré statiquement; pas une validation,"_foreach_range(rhs,workers) do range,worker"
+src/level3.jl,324,tasks,site repéré statiquement; pas une validation,"Threads.@spawn _triangle_task!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,opts,tile,jobs,worker,workers)"
+src/level3.jl,214,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(rhs,Float64(size(A,1))^2*rhs,options.threaded,options.config.parallel_threshold)"
+src/level3.jl,272,float_cast,site repéré statiquement; pas une validation,work=Float64(n)*n*k*(rank2 ? 2 : 1)
+src/level3.jl,50,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (1:j) : (j:n))"
+src/level3.jl,66,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (1:m) : (m:-1:1))"
+src/level3.jl,74,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in (upper ? (n:-1:1) : (1:n)), i in 1:m"
+src/level3.jl,133,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (m:-1:1) : (1:m))"
+src/level3.jl,142,inbounds,site repéré statiquement; pas une validation,@inbounds for j in (upper ? (1:n) : (n:-1:1))
+src/level3.jl,200,inbounds,site repéré statiquement; pas une validation,@inbounds for i in 1:n
+src/level3.jl,240,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (1:j) : (j:n))"
+src/level3.jl,249,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (1:j) : (j:n))"
+src/level3.jl,286,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in eachindex(cols), i in (upper ? (1:j) : (j:length(rows)))"
+src/matrix_market.jl,81,float_cast,site repéré statiquement; pas une validation,"print(io,C.rows[p],' ',C.cols[p],' ',repr(Float64(real(C.values[p]))))"
+src/matrix_market.jl,82,float_cast,site repéré statiquement; pas une validation,"complex && print(io,' ',repr(Float64(imag(C.values[p]))))"
+src/modified_rotations.jl,48,pointer,site repéré statiquement; pas une validation,"@generated function _rotm_simd!(x::Ptr{T},y::Ptr{T},n::Int,p::RotmParams{T},::Val{W},::Val{F}) where {T<:RealFloat,W,F}"
+src/modified_rotations.jl,48,pointer,site repéré statiquement; pas une validation,"@generated function _rotm_simd!(x::Ptr{T},y::Ptr{T},n::Int,p::RotmParams{T},::Val{W},::Val{F}) where {T<:RealFloat,W,F}"
+src/modified_rotations.jl,78,pointer,site repéré statiquement; pas une validation,"a,b=unsafe_load(x,j),unsafe_load(y,j)"
+src/modified_rotations.jl,78,pointer,site repéré statiquement; pas une validation,"a,b=unsafe_load(x,j),unsafe_load(y,j)"
+src/modified_rotations.jl,79,pointer,site repéré statiquement; pas une validation,"unsafe_store!(x,$sx,j); unsafe_store!(y,$sy,j)"
+src/modified_rotations.jl,79,pointer,site repéré statiquement; pas une validation,"unsafe_store!(x,$sx,j); unsafe_store!(y,$sy,j)"
+src/modified_rotations.jl,103,pointer,site repéré statiquement; pas une validation,"GC.@preserve x y _rotm_simd!(pointer(x),pointer(y),length(x),p,Val(w),Val(flag))"
+src/modified_rotations.jl,103,pointer,site repéré statiquement; pas une validation,"GC.@preserve x y _rotm_simd!(pointer(x),pointer(y),length(x),p,Val(w),Val(flag))"
+src/modified_rotations.jl,103,gc_preserve,site repéré statiquement; pas une validation,"GC.@preserve x y _rotm_simd!(pointer(x),pointer(y),length(x),p,Val(w),Val(flag))"
+src/modified_rotations.jl,48,simd,site repéré statiquement; pas une validation,"@generated function _rotm_simd!(x::Ptr{T},y::Ptr{T},n::Int,p::RotmParams{T},::Val{W},::Val{F}) where {T<:RealFloat,W,F}"
+src/modified_rotations.jl,108,simd,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(x)
+src/modified_rotations.jl,114,simd,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(x)
+src/modified_rotations.jl,120,simd,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(x)
+src/modified_rotations.jl,108,inbounds,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(x)
+src/modified_rotations.jl,114,inbounds,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(x)
+src/modified_rotations.jl,120,inbounds,site repéré statiquement; pas une validation,@inbounds @simd for i in eachindex(x)
+src/mrrr.jl,60,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,threaded ? Threads.nthreads() : 1) do range,_"
+src/mrrr.jl,212,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(blocks),threaded ? Threads.nthreads() : 1) do range,_"
+src/multifrontal.jl,100,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(ready),workers) do range,_"
+src/multifrontal_lu.jl,159,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(jobs),workers) do range,_"
+src/orthogonal_decompositions.jl,83,tasks,site repéré statiquement; pas une validation,"_foreach_range(rhs,workers) do range,_"
+src/orthogonal_decompositions.jl,82,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(rhs,Float64(m)*q*rhs,threaded,parallel_threshold)"
+src/out_of_core.jl,45,pointer,site repéré statiquement; pas une validation,"GC.@preserve buffer Base.unsafe_write(io,Ptr{UInt8}(pointer(buffer)),UInt(bytes))"
+src/out_of_core.jl,45,pointer,site repéré statiquement; pas une validation,"GC.@preserve buffer Base.unsafe_write(io,Ptr{UInt8}(pointer(buffer)),UInt(bytes))"
+src/out_of_core.jl,65,pointer,site repéré statiquement; pas une validation,"GC.@preserve buffer Base.unsafe_read(io,Ptr{UInt8}(pointer(buffer)),UInt(bytes))"
+src/out_of_core.jl,65,pointer,site repéré statiquement; pas une validation,"GC.@preserve buffer Base.unsafe_read(io,Ptr{UInt8}(pointer(buffer)),UInt(bytes))"
+src/out_of_core.jl,45,gc_preserve,site repéré statiquement; pas une validation,"GC.@preserve buffer Base.unsafe_write(io,Ptr{UInt8}(pointer(buffer)),UInt(bytes))"
+src/out_of_core.jl,65,gc_preserve,site repéré statiquement; pas une validation,"GC.@preserve buffer Base.unsafe_read(io,Ptr{UInt8}(pointer(buffer)),UInt(bytes))"
+src/qz.jl,22,inbounds,site repéré statiquement; pas une validation,"@inbounds for col in axes(M,2)"
+src/qz.jl,27,inbounds,site repéré statiquement; pas une validation,"@inbounds for row in axes(Q,1)"
+src/qz.jl,35,inbounds,site repéré statiquement; pas une validation,"@inbounds for row in axes(M,1)"
+src/scheduling.jl,5,tasks,site repéré statiquement; pas une validation,"function _foreach_range(f,n,workers)"
+src/scheduling.jl,10,tasks,site repéré statiquement; pas une validation,"Threads.@spawn f(_task_range(n,worker,workers),worker)"
+src/schur.jl,40,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/schur.jl,45,inbounds,site repéré statiquement; pas une validation,@inbounds for row in 1:n
+src/schur.jl,106,inbounds,site repéré statiquement; pas une validation,@inbounds for k in lo:hi-1
+src/schur.jl,145,inbounds,site repéré statiquement; pas une validation,@inbounds for k in lo:hi-1
+src/schur.jl,162,inbounds,site repéré statiquement; pas une validation,@inbounds while i<=n
+src/schur.jl,223,inbounds,site repéré statiquement; pas une validation,@inbounds for idx in eachindex(H)
+src/simd.jl,6,pointer,site repéré statiquement; pas une validation,"@inline @generated function _vload(p::Ptr{T}, ::Val{W}) where {T<:RealFloat,W}"
+src/simd.jl,13,pointer,site repéré statiquement; pas une validation,":(Base.llvmcall($ir, NTuple{$W,VecElement{$T}}, Tuple{Ptr{$T}}, p))"
+src/simd.jl,37,pointer,site repéré statiquement; pas une validation,"@generated function _simd_complex_micro!(c::Ptr{T},ldc::Int,a::Ptr{T},b::Ptr{T},k::Int,"
+src/simd.jl,37,pointer,site repéré statiquement; pas une validation,"@generated function _simd_complex_micro!(c::Ptr{T},ldc::Int,a::Ptr{T},b::Ptr{T},k::Int,"
+src/simd.jl,37,pointer,site repéré statiquement; pas une validation,"@generated function _simd_complex_micro!(c::Ptr{T},ldc::Int,a::Ptr{T},b::Ptr{T},k::Int,"
+src/simd.jl,46,pointer,site repéré statiquement; pas une validation,"push!(zero_store.args,:(_vstore(Ptr{$RT}(c+$off),$val)))"
+src/simd.jl,47,pointer,site repéré statiquement; pas une validation,"push!(beta_store.args,:(_vstore(Ptr{$RT}(c+$off),_vadd($val,_complex_vmul(_vload(Ptr{$RT}(c+$off),Val($vw)),β,Val($vw))))))"
+src/simd.jl,47,pointer,site repéré statiquement; pas une validation,"push!(beta_store.args,:(_vstore(Ptr{$RT}(c+$off),_vadd($val,_complex_vmul(_vload(Ptr{$RT}(c+$off),Val($vw)),β,Val($vw))))))"
+src/simd.jl,53,pointer,site repéré statiquement; pas une validation,"push!(ex.args,:($aa=_vload(Ptr{$RT}(a+((p+$u)*$mr+$(r*W))*sizeof(T)),Val($vw))))"
+src/simd.jl,57,pointer,site repéré statiquement; pas une validation,"push!(ex.args,:(z=unsafe_load(b,(p+$u)*$N+$j+1)))"
+src/simd.jl,91,pointer,site repéré statiquement; pas une validation,"@inline @generated function _vstore(p::Ptr{T}, v::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}"
+src/simd.jl,98,pointer,site repéré statiquement; pas une validation,":(Base.llvmcall($ir, Cvoid, Tuple{Ptr{$T},NTuple{$W,VecElement{$T}}}, p, v))"
+src/simd.jl,127,pointer,site repéré statiquement; pas une validation,"@generated function _simd_micro!(c::Ptr{T}, ldc::Int, a::Ptr{T}, b::Ptr{T}, k::Int,"
+src/simd.jl,127,pointer,site repéré statiquement; pas une validation,"@generated function _simd_micro!(c::Ptr{T}, ldc::Int, a::Ptr{T}, b::Ptr{T}, k::Int,"
+src/simd.jl,127,pointer,site repéré statiquement; pas une validation,"@generated function _simd_micro!(c::Ptr{T}, ldc::Int, a::Ptr{T}, b::Ptr{T}, k::Int,"
+src/simd.jl,144,pointer,site repéré statiquement; pas une validation,"push!(ex.args, :(bb = _splat(unsafe_load(b, (p+$offset)*$N+$j+1), Val($W))))"
+src/simd.jl,6,simd,site repéré statiquement; pas une validation,"@inline @generated function _vload(p::Ptr{T}, ::Val{W}) where {T<:RealFloat,W}"
+src/simd.jl,13,simd,site repéré statiquement; pas une validation,":(Base.llvmcall($ir, NTuple{$W,VecElement{$T}}, Tuple{Ptr{$T}}, p))"
+src/simd.jl,16,simd,site repéré statiquement; pas une validation,"@inline @generated function _vadd(a::NTuple{W,VecElement{T}}, b::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}"
+src/simd.jl,19,simd,site repéré statiquement; pas une validation,":(Base.llvmcall($ir,NTuple{$W,VecElement{$T}},Tuple{NTuple{$W,VecElement{$T}},NTuple{$W,VecElement{$T}}},a,b))"
+src/simd.jl,22,simd,site repéré statiquement; pas une validation,"@inline @generated function _swap_pairs(a::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}"
+src/simd.jl,26,simd,site repéré statiquement; pas une validation,":(Base.llvmcall($ir,NTuple{$W,VecElement{$T}},Tuple{NTuple{$W,VecElement{$T}}},a))"
+src/simd.jl,37,simd,site repéré statiquement; pas une validation,"@generated function _simd_complex_micro!(c::Ptr{T},ldc::Int,a::Ptr{T},b::Ptr{T},k::Int,"
+src/simd.jl,91,simd,site repéré statiquement; pas une validation,"@inline @generated function _vstore(p::Ptr{T}, v::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}"
+src/simd.jl,98,simd,site repéré statiquement; pas une validation,":(Base.llvmcall($ir, Cvoid, Tuple{Ptr{$T},NTuple{$W,VecElement{$T}}}, p, v))"
+src/simd.jl,103,simd,site repéré statiquement; pas une validation,"@inline @generated function _vfma(a::NTuple{W,VecElement{T}}, b::NTuple{W,VecElement{T}}, c::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}"
+src/simd.jl,114,simd,site repéré statiquement; pas une validation,":(Base.llvmcall(($ir, ""entry""), NTuple{$W,VecElement{$T}},"
+src/simd.jl,118,simd,site repéré statiquement; pas une validation,"@inline @generated function _vmul(a::NTuple{W,VecElement{T}}, b::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}"
+src/simd.jl,121,simd,site repéré statiquement; pas une validation,":(Base.llvmcall($ir, NTuple{$W,VecElement{$T}},"
+src/simd.jl,127,simd,site repéré statiquement; pas une validation,"@generated function _simd_micro!(c::Ptr{T}, ldc::Int, a::Ptr{T}, b::Ptr{T}, k::Int,"
+src/simd.jl,180,simd,site repéré statiquement; pas une validation,"@inline @generated function _complex_pairmul(a::NTuple{W,VecElement{T}},b::NTuple{W,VecElement{T}},::Val{C}) where {T<:RealFloat,W,C}"
+src/simd.jl,185,simd,site repéré statiquement; pas une validation,# Separate llvmcalls avoid aggregate-return ABI dependencies.
+src/simd.jl,190,simd,site repéré statiquement; pas une validation,"br=Base.llvmcall($rr,NTuple{$W,VecElement{$T}},Tuple{NTuple{$W,VecElement{$T}}},b)"
+src/simd.jl,191,simd,site repéré statiquement; pas une validation,"bi=Base.llvmcall($ii,NTuple{$W,VecElement{$T}},Tuple{NTuple{$W,VecElement{$T}}},b)"
+src/sparse.jl,50,tasks,site repéré statiquement; pas une validation,"_foreach_range(A.m,workers) do rows,_"
+src/sparse.jl,64,tasks,site repéré statiquement; pas une validation,"_foreach_range(A.n,workers) do columns,_"
+src/sparse.jl,51,inbounds,site repéré statiquement; pas une validation,@inbounds for i in rows
+src/sparse.jl,65,inbounds,site repéré statiquement; pas une validation,@inbounds for j in columns
+src/sparse.jl,74,inbounds,site repéré statiquement; pas une validation,"@inbounds for i in 1:A.m, p in A.rowptr[i]:A.rowptr[i+1]-1"
+src/sparse_extended.jl,140,tasks,site repéré statiquement; pas une validation,"_foreach_range(A.n,workers) do columns,_"
+src/sparse_extended.jl,165,tasks,site repéré statiquement; pas une validation,"_foreach_range(size(Y,2),workers) do columns,_"
+src/sparse_extended.jl,164,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(size(Y,2),Float64(length(C.values))*size(Y,2),threaded,parallel_threshold)"
+src/sparse_extended.jl,133,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:A.n
+src/sparse_extended.jl,141,inbounds,site repéré statiquement; pas une validation,@inbounds for j in columns
+src/sparse_formats.jl,286,float_cast,site repéré statiquement; pas une validation,if threaded && Threads.nthreads()>1 && length(x)*Float64(length(y))>=parallel_threshold
+src/sparse_indefinite.jl,134,tasks,site repéré statiquement; pas une validation,"_foreach_range(size(X,2),workers) do columns,_"
+src/sparse_indefinite.jl,133,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(size(X,2),Float64(length(F.L.values))*size(X,2),threaded,262144)"
+src/sparse_preconditioners.jl,118,tasks,site repéré statiquement; pas une validation,"_foreach_range(n,workers) do range,_"
+src/sparse_preconditioners.jl,171,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(P.domains),P.threaded ? Threads.nthreads() : 1) do range,_"
+src/spectral_filter.jl,74,float_cast,site repéré statiquement; pas une validation,theta_hi=acos(Float64(mapped(lo))); theta_lo=acos(Float64(mapped(hi)))
+src/spectral_filter.jl,74,float_cast,site repéré statiquement; pas une validation,theta_hi=acos(Float64(mapped(lo))); theta_lo=acos(Float64(mapped(hi)))
+src/spectral_filter.jl,75,float_cast,site repéré statiquement; pas une validation,"moments=Float64(Base.checked_add(Int(degree),2)); angle=pi/moments; cotangent=cos(angle)/sin(angle)"
+src/stochastic.jl,16,float_cast,site repéré statiquement; pas une validation,"new(Int(num_probes),UInt64(seed),probe_type,Float64(confidence))"
+src/stochastic.jl,27,float_cast,site repéré statiquement; pas une validation,@inline _probe_uniform!(state)=(Float64(_probe_bits!(state)>>12)+0.5)*0x1.0p-52
+src/storage.jl,27,inbounds,site repéré statiquement; pas une validation,"return convert(T,real(@inbounds A.data[_pindex(A,i,j)]))"
+src/storage.jl,29,inbounds,site repéré statiquement; pas une validation,"v=@inbounds A.data[stored ? _pindex(A,i,j) : _pindex(A,j,i)]"
+src/storage.jl,37,inbounds,site repéré statiquement; pas une validation,"@inbounds A.data[stored ? _pindex(A,i,j) : _pindex(A,j,i)]=value"
+src/storage.jl,43,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in (upper ? (1:j) : (j:n))"
+src/storage.jl,81,inbounds,site repéré statiquement; pas une validation,"v=@inbounds A.data[row,jj]"
+src/storage.jl,90,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 1:n, i in max(1,j-P.ku):min(m,j+P.kl)"
+src/svd.jl,14,simd,site repéré statiquement; pas une validation,"@inbounds @simd for row in axes(B,1)"
+src/svd.jl,14,inbounds,site repéré statiquement; pas une validation,"@inbounds @simd for row in axes(B,1)"
+src/svd.jl,32,inbounds,site repéré statiquement; pas une validation,"@inbounds for j in 2:n, i in 1:j-1"
+src/svd.jl,77,inbounds,site repéré statiquement; pas une validation,"@inbounds for pass in 1:2, j in 1:col-1"
+src/svd.jl,88,inbounds,site repéré statiquement; pas une validation,@inbounds for row in 1:m
+src/svd.jl,135,inbounds,site repéré statiquement; pas une validation,@inbounds for j in 1:n
+src/svd_advanced.jl,284,tasks,site repéré statiquement; pas une validation,"_foreach_range(pairs,workers) do range,worker"
+src/svd_advanced.jl,279,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(pairs,Float64(m)*n,threaded,262144); flags=zeros(UInt8,max(1,workers))"
+src/tensors.jl,229,tasks,site repéré statiquement; pas une validation,"_foreach_range(length(result),workers) do range,_"
+src/tensors.jl,228,float_cast,site repéré statiquement; pas une validation,"workers=_operation_workers(length(result),Float64(length(result))*length(rindices)*length(arrays),threaded,262144)"
+src/tensors.jl,338,inbounds,site repéré statiquement; pas une validation,"@inbounds for i in eachindex(C,result)"
+src/tensors.jl,382,inbounds,site repéré statiquement; pas une validation,"@inbounds for i in eachindex(C,R)"
+src/weighted_matching.jl,25,float_cast,site repéré statiquement; pas une validation,weight=Float64(value)
+src/weighted_matching.jl,27,float_cast,site repéré statiquement; pas une validation,weight=Float64(abs(value))
+src/weighted_matching.jl,29,float_cast,site repéré statiquement; pas une validation,"scale=max(abs(Float64(real(value))),abs(Float64(imag(value))))"
+src/weighted_matching.jl,29,float_cast,site repéré statiquement; pas une validation,"scale=max(abs(Float64(real(value))),abs(Float64(imag(value))))"
+src/weighted_matching.jl,30,float_cast,site repéré statiquement; pas une validation,"weight=log(scale)+log(hypot(Float64(real(value))/scale,Float64(imag(value))/scale))"
+src/weighted_matching.jl,30,float_cast,site repéré statiquement; pas une validation,"weight=log(scale)+log(hypot(Float64(real(value))/scale,Float64(imag(value))/scale))"

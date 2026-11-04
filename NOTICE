@@ -1,0 +1,16 @@
+OxiBLAS.jl is a native Julia adaptation of selected algorithms and architecture
+from OxiBLAS, https://github.com/cool-japan/oxiblas
+Upstream revision: 8d82bb6bf1df133aa90525aa9f478ebe41514f9b
+Upstream package version: 0.2.2
+
+Copyright 2026 COOLJAPAN OU (Team KitaSan)
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Modifications and new implementation, 2026: Julia array/view semantics,
+task-owned aligned packing buffers, VecElement/LLVM vector microkernels,
+Julia threading, complex interleaved 4M kernels, public Julia API, tests,
+benchmarks and documentation. No upstream Rust numerical binaries are used by
+the Julia package. Rust is compiled separately only for reference verification.
+
+This is an incomplete port; it is not an upstream release or a claim of
+feature parity. See docs/STATUS.md and docs/upstream_inventory.csv.

@@ -1,0 +1,63 @@
+# Common tests (OXIBLAS_TEST_GROUP=core) and quality checks on every push and
+# pull request. The extended campaigns run in Extended.yml.
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  # Only the latest run of a pull request is kept.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.threads }} thread(s)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1.10', '1']
+        os: [ubuntu-latest, macos-latest]
+        threads: ['1', '4']
+        exclude:
+          - version: '1.10'
+            threads: '4'
+    env:
+      # OxiBLAS never calls BLAS/LAPACK; the references used by the tests do,
+      # on one thread so that the native thread count is the only variable.
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_NUM_THREADS: ${{ matrix.threads }}
+      OXIBLAS_TEST_GROUP: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          check_bounds: 'yes'
+  generic-cpu:
+    # The scalar fallback of the SIMD kernels: -C generic hides every vector
+    # ISA from the compiler (kept from the former workflow).
+    name: Julia 1 - ubuntu-latest - generic CPU target
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OXIBLAS_TEST_GROUP: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Tests with -C generic
+        run: julia --startup-file=no -C generic --check-bounds=yes --project=. -e 'using Pkg; Pkg.test(julia_args=["-C", "generic"])'

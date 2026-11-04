@@ -1,0 +1,19 @@
+.DS_Store
+*.ji
+*.so
+*.dylib
+*.dll
+__pycache__/
+# Environments are resolved by each user / CI run.
+/Manifest.toml
+benchmark/Manifest.toml
+docs/Manifest.toml
+test/Manifest.toml
+# Documentation build output and generated pages (docs/make.jl).
+docs/build/
+docs/src/reference/*.md
+!docs/src/reference/index.md
+# Benchmark results (benchmark/run.jl).
+benchmark/results/
+# Campaign reports and measurement logs stay local (not part of the package).
+reports/

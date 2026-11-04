@@ -1,0 +1,11 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OxiBLAS = "21564215-86dc-4d3d-abe9-f5572d28b8da"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
+[compat]
+Documenter = "1"
+
+[sources]
+OxiBLAS = {path = ".."}
