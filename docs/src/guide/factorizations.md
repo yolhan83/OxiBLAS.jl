@@ -1,9 +1,9 @@
-# Factorisations denses et LAPACK
+# Dense factorizations and LAPACK
 
-Les moteurs denses sont écrits en Julia et réutilisent le GEMM natif pour
-leurs mises à jour par blocs. Chacun renvoie un objet propre (`LUFactor`,
-`QRFactor`…), utilisable avec `solve` ou par l'[API haut niveau](highlevel.md),
-qui l'enveloppe dans une `LinearAlgebra.Factorization`.
+The dense engines are written in Julia and reuse the native GEMM for their
+blocked updates. Each one returns its own object (`LUFactor`, `QRFactor`…),
+usable with `solve` or through the [high-level API](highlevel.md), which wraps
+it in a `LinearAlgebra.Factorization`.
 
 ```@example fact
 using OxiBLAS, LinearAlgebra
@@ -11,72 +11,70 @@ A = randn(80, 80) + 80I; b = randn(80)
 F = lu_factor(A)                 # F.L*F.U ≈ A[F.p,:]
 x = solve(F, b)
 H = Hermitian(A * A')
-C = cholesky_factor(Matrix(H))   # triangle inférieur, F.L*F.L' ≈ A
-Q = qr_factor(randn(100, 40))    # moindres carrés : least_squares(Q, y)
+C = cholesky_factor(Matrix(H))   # lower triangle, F.L*F.L' ≈ A
+Q = qr_factor(randn(100, 40))    # least squares: least_squares(Q, y)
 norm(A * x - b) / norm(b)
 ```
 
-## Systèmes linéaires
+## Linear systems
 
-| Fonction | Résultat |
+| Function | Result |
 |---|---|
-| `lu_factor(A; blocksize, check, threaded, pivot=:partial)` | LU par blocs ; `pivot=:complete` ou `:rook` (`lu_complete`, `lu_rook`) |
-| `cholesky_factor(A; blocksize, threaded)` | Cholesky, triangle inférieur |
-| `ldlt_factor(A; uplo, hermitian, pivot=:bunchkaufman)`, `bunchkaufman_factor` | blocs D 1×1/2×2, `A[p,p] ≈ L·D·Lᴴ` ; `pivot=:none` possible |
-| `aasen_factor` | factorisation d'Aasen |
-| `solve(F, b)`, `solve_transposed` | résolution avec une factorisation |
-| `least_squares(A, b)` | moindres carrés, m ≥ n, rang plein |
-| `mixed_solve(A, b)` | LU en précision réduite, raffinement en `Float64` |
-| `expert_solve`, `refine_solve`, `expert_cholesky`, `expert_symmetric` | équilibrage, raffinement itératif, erreur arrière |
+| `lu_factor(A; blocksize, check, threaded, pivot=:partial)` | blocked LU; `pivot=:complete` or `:rook` (`lu_complete`, `lu_rook`) |
+| `cholesky_factor(A; blocksize, threaded)` | Cholesky, lower triangle |
+| `ldlt_factor(A; uplo, hermitian, pivot=:bunchkaufman)`, `bunchkaufman_factor` | 1×1/2×2 D blocks, `A[p,p] ≈ L·D·Lᴴ`; `pivot=:none` possible |
+| `aasen_factor` | Aasen factorization |
+| `solve(F, b)`, `solve_transposed` | solve with a factorization |
+| `least_squares(A, b)` | least squares, m ≥ n, full rank |
+| `mixed_solve(A, b)` | LU in reduced precision, `Float64` refinement |
+| `expert_solve`, `refine_solve`, `expert_cholesky`, `expert_symmetric` | equilibration, iterative refinement, backward error |
 | `native_inverse`, `cholesky_inverse`, `pseudoinverse` | inverses |
-| `determinant`, `logabsdet_factor`, `condition_number`, `reciprocal_condition`, `inverse_norm_estimate` | déterminant et conditionnement |
+| `determinant`, `logabsdet_factor`, `condition_number`, `reciprocal_condition`, `inverse_norm_estimate` | determinant and conditioning |
 
-## Orthogonalisations et rang
+## Orthogonalizations and rank
 
-| Fonction | Résultat |
+| Function | Result |
 |---|---|
-| `qr_factor(A; blocksize, threaded, pivot=false)`, `qr_pivoted` | QR compact WY ; pivot de colonnes `A[:,F.p] ≈ F.Q*F.R` |
-| `lq_factor`, `ql_factor`, `rq_factor`, `complete_orthogonal` | autres décompositions orthogonales |
-| `apply_q!`, `qr_q` | application ou formation de Q |
-| `numerical_rank`, `null_space`, `left_null_space`, `column_space`, `row_space` | rang et sous-espaces |
+| `qr_factor(A; blocksize, threaded, pivot=false)`, `qr_pivoted` | compact WY QR; column pivoting `A[:,F.p] ≈ F.Q*F.R` |
+| `lq_factor`, `ql_factor`, `rq_factor`, `complete_orthogonal` | other orthogonal decompositions |
+| `apply_q!`, `qr_q` | apply or form Q |
+| `numerical_rank`, `null_space`, `left_null_space`, `column_space`, `row_space` | rank and subspaces |
 
-## Valeurs propres et valeurs singulières
+## Eigenvalues and singular values
 
-| Fonction | Résultat |
+| Function | Result |
 |---|---|
-| `hessenberg_factor`, `hessenberg_q`, `apply_hessenberg_q!` | réduction de Hessenberg |
-| `schur_factor`, `schur_multishift`, `eigenvalues`, `eigen_general` | Schur (QR à décalages), valeurs et vecteurs propres généraux |
-| `schur_reorder`, `schur_eigenvectors`, `trevc_right`, `trevc_left`, `trsna_s`, `trsna_sep`, `schur_condition` | réordonnancement, vecteurs, conditionnement |
-| `tridiagonal_factor`, `eigen_tridiagonal`, `eigen_tridiagonal_dc`, `eigen_tridiagonal_mrrr` | tridiagonal hermitien (QR implicite, diviser-pour-régner, MRRR) |
-| `eigen_hermitian`, `eigen_hermitian_dc`, `eigen_hermitian_mrrr`, `eigen_generalized` | problèmes hermitiens, standard et généralisés |
-| `qz_factor`, `eigen_pencil`, `qz_reorder`, `qz_condition`, `generalized_sylvester` | faisceaux (QZ réel ou complexe) |
-| `svd_factor(A; algorithm)`, `singular_values` | SVD : Jacobi unilatéral (défaut) ou `:golub_kahan` |
-| `svd_bidiagonal`, `svd_divide_conquer`, `svd_truncated`, `svd_selected`, `svd_randomized` | variantes et SVD partielles |
-| `bidiagonal_factor`, `balance_matrix`, `balance_backtransform` | réductions auxiliaires |
+| `hessenberg_factor`, `hessenberg_q`, `apply_hessenberg_q!` | Hessenberg reduction |
+| `schur_factor`, `schur_multishift`, `eigenvalues`, `eigen_general` | Schur (shifted QR), general eigenvalues and eigenvectors |
+| `schur_reorder`, `schur_eigenvectors`, `trevc_right`, `trevc_left`, `trsna_s`, `trsna_sep`, `schur_condition` | reordering, vectors, conditioning |
+| `tridiagonal_factor`, `eigen_tridiagonal`, `eigen_tridiagonal_dc`, `eigen_tridiagonal_mrrr` | Hermitian tridiagonal (implicit QR, divide and conquer, MRRR) |
+| `eigen_hermitian`, `eigen_hermitian_dc`, `eigen_hermitian_mrrr`, `eigen_generalized` | standard and generalized Hermitian problems |
+| `qz_factor`, `eigen_pencil`, `qz_reorder`, `qz_condition`, `generalized_sylvester` | matrix pencils (real or complex QZ) |
+| `svd_factor(A; algorithm)`, `singular_values` | SVD: one-sided Jacobi (default) or `:golub_kahan` |
+| `svd_bidiagonal`, `svd_divide_conquer`, `svd_truncated`, `svd_selected`, `svd_randomized` | variants and partial SVDs |
+| `bidiagonal_factor`, `balance_matrix`, `balance_backtransform` | auxiliary reductions |
 
-**SVD.** Le Jacobi par défaut garantit une précision relative sur les petites
-valeurs singulières, au prix de plusieurs fois le coût de `gesdd`.
-`algorithm=:golub_kahan` est la voie rapide (voir le banc haut niveau,
-[Performances](performance.md)).
+**SVD.** The default Jacobi guarantees relative accuracy on small singular
+values, at several times the cost of `gesdd`. `algorithm=:golub_kahan` is the
+fast path (see the high-level suite in [Performance](performance.md)).
 
-## Fonctions matricielles
+## Matrix functions
 
 `matrix_exp`, `matrix_log`, `matrix_sqrt`, `matrix_power`, `matrix_sign`,
-`matrix_sin`, `matrix_cos`, les dérivées de Fréchet (`frechet_exp`,
-`frechet_log`, `frechet_sqrt`, `frechet_matrix`), `matrix_norm`, `kron_product`,
-`khatri_rao`, `kron_sum` et `kronecker_action`. Les versions haut niveau
-`OxiBLAS.exp`, `log`, `sqrt`, `sin` et `cos` conservent la structure quand
-elle est garantie (voir [API haut niveau](highlevel.md)).
+`matrix_sin`, `matrix_cos`, the Fréchet derivatives (`frechet_exp`,
+`frechet_log`, `frechet_sqrt`, `frechet_matrix`), `matrix_norm`,
+`kron_product`, `khatri_rao`, `kron_sum` and `kronecker_action`. The
+high-level versions `OxiBLAS.exp`, `log`, `sqrt`, `sin` and `cos` keep the
+structure when it is guaranteed (see the [high-level API](highlevel.md)).
 
-## Précision étendue
+## Extended precision
 
-Les algorithmes génériques acceptent d'autres flottants (`BigFloat`, `Float16`,
-types de précision étendue fournis par d'autres paquets). Voir
-[LOT_PRECISION_ETENDUE](../dev/LOT_PRECISION_ETENDUE.md) et `gemm_extended!`,
-`dot_extended`.
+The generic algorithms accept other floating-point types (`BigFloat`,
+`Float16`, extended-precision types provided by other packages), as do
+`gemm_extended!` and `dot_extended`.
 
-## Erreurs
+## Errors
 
-`SingularException` et `PosDefException` sont celles de `LinearAlgebra`
-(réexportées sous les mêmes noms). `ConvergenceError` signale une limite
-d'itérations atteinte.
+`SingularException` and `PosDefException` are those of `LinearAlgebra`
+(re-exported under the same names). `ConvergenceError` reports that an
+iteration limit was reached.

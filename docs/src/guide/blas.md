@@ -1,8 +1,8 @@
-# BLAS 1, 2, 3 et multiplication matricielle
+# BLAS 1, 2, 3 and matrix multiplication
 
-Toutes les fonctions travaillent sur des tableaux indexés à partir de 1. Les
-chemins optimisés couvrent `Float32`, `Float64`, `ComplexF32` et `ComplexF64`.
-Les sorties doivent être modifiables et sans indices répétés.
+Every function works on 1-based arrays. The optimized paths cover `Float32`,
+`Float64`, `ComplexF32` and `ComplexF64`. Outputs must be mutable and free of
+repeated indices.
 
 ## GEMM
 
@@ -16,70 +16,65 @@ gemm!(G, A, A; transA=:C)                # G ← Aᴴ·A
 kernel_info(Float32)
 ```
 
-- `transA`/`transB` valent `:N`, `:T` ou `:C`. Les vues à pas non unitaire,
-  `transpose` et `adjoint` sont acceptés.
-- Une entrée qui recouvre la sortie est copiée avant l'écriture. `β = 0` ne lit
-  pas l'ancienne sortie ; `α = 0` ou `k = 0` ne lit pas les entrées.
-- `algorithm` choisit une voie : `:auto`, `:reference`, `:blocked`, `:packed`,
-  `:register`, `:simd`. `kernel` vaut `:auto`, `:scalar`, `:neon`, `:avx2` ou
-  `:avx512` ; une ISA indisponible provoque une erreur avant toute écriture.
-- **Espace de travail.** `GemmWorkspace(T, m, n, k; config, workers)` réserve
-  des panneaux réutilisables. Son partage entre appels est protégé par un
-  verrou ; pour des appels simultanés indépendants, il faut un espace par tâche.
-- **Parallélisme.** Il est contrôlé par `julia --threads=N`, `threaded=false`
-  et `GemmConfig(parallel_threshold=...)`. Le nombre de tâches suit la taille du
-  produit.
-- Variantes : `gemm_cache_oblivious!`, `gemm_strassen!`, `gemm_winograd!`
-  (choisies explicitement), `gemm_batched!`, `gemm_strided_batched!`,
-  `gemm_extended!` (types génériques).
+- `transA`/`transB` are `:N`, `:T` or `:C`. Non-unit-stride views,
+  `transpose` and `adjoint` are accepted.
+- An input that overlaps the output is copied before writing. `β = 0` does not
+  read the old output; `α = 0` or `k = 0` does not read the inputs.
+- `algorithm` selects a path: `:auto`, `:reference`, `:blocked`, `:packed`,
+  `:register`, `:simd`. `kernel` is `:auto`, `:scalar`, `:neon`, `:avx2` or
+  `:avx512`; an unavailable ISA raises an error before anything is written.
+- **Workspace.** `GemmWorkspace(T, m, n, k; config, workers)` reserves
+  reusable panels. Sharing it between calls is protected by a lock; for
+  independent concurrent calls, use one workspace per task.
+- **Parallelism.** It is controlled by `julia --threads=N`, `threaded=false`
+  and `GemmConfig(parallel_threshold=...)`. The number of tasks follows the
+  size of the product.
+- Variants: `gemm_cache_oblivious!`, `gemm_strassen!`, `gemm_winograd!`
+  (explicitly chosen), `gemm_batched!`, `gemm_strided_batched!`,
+  `gemm_extended!` (generic types).
 
-## `OxiBLAS.mul!` et `OxiBLAS.mul`
+## `OxiBLAS.mul!` and `OxiBLAS.mul`
 
-`OxiBLAS.mul!(C, A, B, α, β)` et `OxiBLAS.mul(A, B)` (non exportés) dispatchent
-vers le bon noyau selon les types : GEMM dense, produit creux × dense, creux ×
-creux, matrices structurées. `A * B` sur les formats creux OxiBLAS passe par la
-même couche.
+`OxiBLAS.mul!(C, A, B, α, β)` and `OxiBLAS.mul(A, B)` (not exported) dispatch
+to the right kernel from the types: dense GEMM, sparse × dense, sparse ×
+sparse, structured matrices. `A * B` on the OxiBLAS sparse formats goes
+through the same layer.
 
 ## BLAS 1
 
-| Fonction | Convention |
+| Function | Convention |
 |---|---|
 | `axpy!(y, x, α=1)`, `scal!(x, α)` | y ← y + αx ; x ← αx |
-| `copy_vector!(y, x)`, `swap!(x, y)` | copie avec instantané ; échange de vecteurs disjoints |
-| `dotu(x, y)`, `dotc(x, y)` | somme sans / avec conjugaison du premier opérande |
-| `dot_kahan`, `dot_pairwise` | sommations compensée et par paires |
-| `dsdot`, `sdsdot` | vecteurs `Float32`, accumulation `Float64` |
-| `nrm2`, `asum`, `iamax`, `iamin` | norme euclidienne à l'échelle ; métrique complexe \|Re\|+\|Im\| |
-| `rotg`, `rot!`, `rotmg`, `rotmg!`, `rotm!`, `RotmParams` | rotations de Givens et modifiées |
-| `axpy_parallel!`, `scal_parallel!`, `dot_parallel`, `nrm2_parallel`, `asum_parallel` | variantes multitâches explicites |
+| `copy_vector!(y, x)`, `swap!(x, y)` | copy with snapshot; swap of disjoint vectors |
+| `dotu(x, y)`, `dotc(x, y)` | sum without / with conjugation of the first operand |
+| `dot_kahan`, `dot_pairwise` | compensated and pairwise summation |
+| `dsdot`, `sdsdot` | `Float32` vectors, `Float64` accumulation |
+| `nrm2`, `asum`, `iamax`, `iamin` | scaled Euclidean norm; complex metric \|Re\|+\|Im\| |
+| `rotg`, `rot!`, `rotmg`, `rotmg!`, `rotm!`, `RotmParams` | Givens and modified rotations |
+| `axpy_parallel!`, `scal_parallel!`, `dot_parallel`, `nrm2_parallel`, `asum_parallel` | explicit multithreaded variants |
 
 ## BLAS 2
 
-| Fonction | Convention |
+| Function | Convention |
 |---|---|
 | `gemv!(y, A, x, α=1, β=0; trans=:N)` | y ← α·op(A)·x + β·y |
-| `ger!(A, x, y, α)`, `gerc!` | mise à jour de rang 1, yᵀ / yᴴ |
-| `symv!`, `hemv!` | même ordre que `gemv!`, `uplo=:U` ou `:L` |
-| `syr!`, `syr2!`, `her!`, `her2!` | seul le triangle choisi est modifié |
-| `trmv!(x, A; uplo, trans, unit)`, `trsv!` | diagonale unité jamais lue |
+| `ger!(A, x, y, α)`, `gerc!` | rank-1 update, yᵀ / yᴴ |
+| `symv!`, `hemv!` | same order as `gemv!`, `uplo=:U` or `:L` |
+| `syr!`, `syr2!`, `her!`, `her2!` | only the selected triangle is modified |
+| `trmv!(x, A; uplo, trans, unit)`, `trsv!` | a unit diagonal is never read |
 
 ## BLAS 3
 
-| Fonction | Convention |
+| Function | Convention |
 |---|---|
-| `symm!(C, A, B, α, β; side, uplo)`, `hemm!` | A est la matrice structurée, côté `:L`/`:R` |
-| `trmm!(B, A, α; ...)`, `trsm!` | B est modifiée ; `side`, `uplo`, `trans`, `unit` |
-| `syrk!(C, A, α, β; ...)`, `herk!`, `syr2k!`, `her2k!` | seul le triangle de C est mis à jour |
-| `gemmt!(C, A, B, α=1, β=0; uplo, transA, transB)` | triangle de α·op(A)·op(B) + β·C |
-| `triangular_workspace` | espace réutilisable pour TRMM/TRSM |
+| `symm!(C, A, B, α, β; side, uplo)`, `hemm!` | A is the structured matrix, side `:L`/`:R` |
+| `trmm!(B, A, α; ...)`, `trsm!` | B is overwritten; `side`, `uplo`, `trans`, `unit` |
+| `syrk!(C, A, α, β; ...)`, `herk!`, `syr2k!`, `her2k!` | only the triangle of C is updated |
+| `gemmt!(C, A, B, α=1, β=0; uplo, transA, transB)` | triangle of α·op(A)·op(B) + β·C |
+| `triangular_workspace` | reusable workspace for TRMM/TRSM |
 
-Les BLAS 3 structurés réutilisent le moteur GEMM et ses options (`algorithm`,
-`kernel`, `threaded`, `workspace`, `config`). SYRK, HERK, SYR2K, HER2K et
-GEMMT peuvent répartir des tuiles indépendantes entre tâches.
+The structured BLAS 3 routines reuse the GEMM engine and its options
+(`algorithm`, `kernel`, `threaded`, `workspace`, `config`). SYRK, HERK, SYR2K,
+HER2K and GEMMT can spread independent tiles across tasks.
 
-## Pour aller plus loin
-
-- Conventions détaillées de chaque fonction : [Interface Julia indépendante](../dev/API.md).
-- Conception des BLAS 3 : [BLAS3_DESIGN](../dev/BLAS3_DESIGN.md) ;
-  BLAS 1 : [LEVEL1_DESIGN](../dev/LEVEL1_DESIGN.md).
-- Mesures et méthodologie : [Performances](performance.md).
+Measurements and methodology: [Performance](performance.md).

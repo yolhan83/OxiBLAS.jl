@@ -17,3 +17,5 @@ docs/src/reference/*.md
 benchmark/results/
 # Campaign reports and measurement logs stay local (not part of the package).
 reports/
+# Development journals of versions 0.1-0.6 (French) stay local.
+docs/src/dev/

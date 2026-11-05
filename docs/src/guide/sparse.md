@@ -1,106 +1,106 @@
-# Matrices creuses
+# Sparse matrices
 
 ## Formats
 
-| Format | Constructeur |
+| Format | Constructor |
 |---|---|
-| `CSRMatrix`, `CSCMatrix`, `COOMatrix` | `CSRMatrix(m, n, rowptr, colind, values)`, ou conversion d'une matrice (`CSRMatrix(S)` pour `S::SparseMatrixCSC`) |
-| `DIAMatrix`, `ELLMatrix`, `BSRMatrix`, `BSCMatrix`, `HYBMatrix`, `SELLMatrix` | formats étendus, convertis depuis CSR/CSC |
-| `SparseTensor` | tableau creux à N dimensions ([tenseurs](tensors.md)) |
+| `CSRMatrix`, `CSCMatrix`, `COOMatrix` | `CSRMatrix(m, n, rowptr, colind, values)`, or conversion of a matrix (`CSRMatrix(S)` for `S::SparseMatrixCSC`) |
+| `DIAMatrix`, `ELLMatrix`, `BSRMatrix`, `BSCMatrix`, `HYBMatrix`, `SELLMatrix` | extended formats, converted from CSR/CSC |
+| `SparseTensor` | N-dimensional sparse array ([tensors](tensors.md)) |
 
-Ces types sont des `SparseArrays.AbstractSparseMatrix`. Ils interopèrent avec
-SparseArrays :
-- conversions `SparseMatrixCSC(A)` et `CSCMatrix(S)` (sans copie depuis un
-  `SparseMatrixCSC`) ;
-- `nnz`, `findnz`, `getindex`, broadcast ;
+These types are `SparseArrays.AbstractSparseMatrix`. They interoperate with
+SparseArrays:
+
+- conversions `SparseMatrixCSC(A)` and `CSCMatrix(S)` (no copy from a
+  `SparseMatrixCSC`);
+- `nnz`, `findnz`, `getindex`, broadcast;
 - `hcat`, `vcat`, `kron`, `blockdiag`, `fkeep!`.
 
-`OxiBLAS.spdiagm` et `OxiBLAS.sparsevec` construisent directement les formats
-OxiBLAS.
+`OxiBLAS.spdiagm` and `OxiBLAS.sparsevec` build the OxiBLAS formats directly.
 
-## Produits
+## Products
 
-`sparse_mul!(y, A, x, α, β; trans)` calcule le produit creux × dense,
-`sparse_matmul(A, B)` le produit creux × creux. `A * B`, `A * x` et
-`OxiBLAS.mul!` dispatchent vers les mêmes noyaux.
+`sparse_mul!(y, A, x, α, β; trans)` computes the sparse × dense product,
+`sparse_matmul(A, B)` the sparse × sparse product. `A * B`, `A * x` and
+`OxiBLAS.mul!` dispatch to the same kernels.
 
-## Résolution : `\` et factorisations
+## Solves: `\` and factorizations
 
 ```@example sp
 using OxiBLAS, SparseArrays, LinearAlgebra
 n = 400; S = sprand(n, n, 0.01) + 10I; A = CSRMatrix(S); b = randn(n)
-x = A \ b                         # choix de factorisation selon la structure
-F = OxiBLAS.lu(A)                 # LU multifrontale, F.L*F.U == A[F.p,F.q]
+x = A \ b                         # factorization chosen from the structure
+F = OxiBLAS.lu(A)                 # multifrontal LU, F.L*F.U == A[F.p,F.q]
 P = CSRMatrix(S * S' + I)
 C = OxiBLAS.cholesky(Hermitian(P))
 (norm(S * x - b) / norm(b), norm(S * (F \ b) - b) / norm(b), norm(P * (C \ b) - b) / norm(b))
 ```
 
-`A \ B` sur un format OxiBLAS suit l'ordre de SparseArrays :
+`A \ B` on an OxiBLAS format follows the order of SparseArrays:
 
-| Structure (testée en O(nnz)) | Factorisation |
+| Structure (tested in O(nnz)) | Factorization |
 |---|---|
-| triangulaire ou diagonale | substitution creuse native (`sparse_triangular_solve`) |
-| hermitienne | Cholesky multifrontale, ou Bunch–Kaufman si elle n'est pas définie positive |
-| symétrique complexe | Bunch–Kaufman |
-| autre carrée | LU multifrontale |
-| haute | QR multifrontale (moindres carrés) |
+| triangular or diagonal | native sparse substitution (`sparse_triangular_solve`) |
+| Hermitian | multifrontal Cholesky, or Bunch–Kaufman if not positive definite |
+| complex symmetric | Bunch–Kaufman |
+| other square | multifrontal LU |
+| tall | multifrontal QR (least squares) |
 
-| Moteur | Fonctions |
+| Engine | Functions |
 |---|---|
 | LU | `multifrontal_lu`, `sparse_lu`, `sparse_lu_static`, `sparse_lu_blocked` |
 | Cholesky | `multifrontal_cholesky`, `supernodal_cholesky`, `sparse_cholesky`, `symbolic_cholesky` |
-| LDLᵀ indéfini | `sparse_ldlt` (Bunch–Kaufman par fronts), `ldl_inertia` |
+| indefinite LDLᵀ | `sparse_ldlt` (Bunch–Kaufman within fronts), `ldl_inertia` |
 | QR | `sparse_qr`, `sparse_apply_q!` |
-| sur disque | `out_of_core_lu`, `out_of_core_cholesky`, `out_of_core_memory_usage` |
-| triangulaire | `sparse_triangular_solve` |
+| out of core | `out_of_core_lu`, `out_of_core_cholesky`, `out_of_core_memory_usage` |
+| triangular | `sparse_triangular_solve` |
 
-## Solveurs itératifs et préconditionneurs
+## Iterative solvers and preconditioners
 
-- **Solveurs.** `cg`, `pcg`, `gmres`, `fgmres`, `bicgstab`, `minres`,
-  `tfqmr`, `qmr`, `idrs`, et leurs variantes par blocs `block_cg` et
-  `block_gmres`. Chacun renvoie la solution, le statut de convergence, les
-  itérations et le résidu réellement recalculé.
-- **Préconditionneurs.** `ilu0`, `ilut`, `ic0`, `ict`, `spai`, `ainv`, `amg`,
-  `relaxation_preconditioner`, `polynomial_preconditioner` et
+- **Solvers.** `cg`, `pcg`, `gmres`, `fgmres`, `bicgstab`, `minres`, `tfqmr`,
+  `qmr`, `idrs`, and their block variants `block_cg` and `block_gmres`. Each
+  returns the solution, the convergence status, the iterations and the
+  actually recomputed residual.
+- **Preconditioners.** `ilu0`, `ilut`, `ic0`, `ict`, `spai`, `ainv`, `amg`,
+  `relaxation_preconditioner`, `polynomial_preconditioner` and
   `additive_schwarz`.
 
-## Ordonnancements et graphes
+## Orderings and graphs
 
-Les familles d'ordonnancement disponibles :
-- **degré minimum :** `amd_ordering`, `colamd_ordering`,
-  `minimum_degree_ordering`, `multiple_minimum_degree`, `column_minimum_degree` ;
-- **profil et bande :** `reverse_cuthill_mckee` ;
-- **dissection emboîtée :** `nested_dissection`, `multilevel_nested_dissection`.
+The available ordering families:
 
-Les outils de graphes sont :
+- **minimum degree:** `amd_ordering`, `colamd_ordering`,
+  `minimum_degree_ordering`, `multiple_minimum_degree`,
+  `column_minimum_degree`;
+- **profile and bandwidth:** `reverse_cuthill_mckee`;
+- **nested dissection:** `nested_dissection`, `multilevel_nested_dissection`.
+
+The graph tools are:
+
 - `connected_components`, `level_sets`, `multilevel_partition`,
-  `refine_partition` ;
-- les couplages bipartis (`bipartite_matching`, `weighted_bipartite_matching`) ;
-- la sélection d'un ordonnancement : `sparse_ordering`,
-  `select_sparse_ordering`, `ordering_metrics`, `compare_orderings`.
+  `refine_partition`;
+- bipartite matchings (`bipartite_matching`, `weighted_bipartite_matching`);
+- choice of an ordering: `sparse_ordering`, `select_sparse_ordering`,
+  `ordering_metrics`, `compare_orderings`.
 
-## Entrées et sorties
+## Input and output
 
-`read_matrix_market` et `write_matrix_market` lisent et écrivent le format
-Matrix Market.
+`read_matrix_market` and `write_matrix_market` read and write the Matrix
+Market format.
 
 ## Limitations
 
-- **Système creux large (sous-déterminé).** Il n'a pas de solveur :
-  `OxiBLAS.qr` refuse une matrice large par une `ArgumentError`, et `A \ b`
-  aussi.
-- **QR creuse sans détection du rang.** Elle n'est pas révélatrice du rang :
-  `SingularException` sur une matrice numériquement déficiente.
-- **Destination creuse refusée.** Une solution est dense.
-- **Inverse refusé.** `OxiBLAS.inv` d'une matrice creuse lève une
-  `ArgumentError` : il faut factoriser puis résoudre.
-- **Pas d'état d'échec.** Les moteurs LU et Cholesky creux lèvent l'exception
-  standard même avec `check=false`.
-- **`SparseMatrixCSC` non modifié.** OxiBLAS n'ajoute aucune méthode de
-  `LinearAlgebra`/`SparseArrays` sur ce type : `S \ b` reste celui de
-  SparseArrays (UMFPACK, CHOLMOD). `OxiBLAS.ldiv(S, b)` et `OxiBLAS.lu(S)`
-  passent par les moteurs OxiBLAS.
-
-Conception historique :  [LOT_SPARSE_DIRECT](../dev/LOT_SPARSE_DIRECT.md) et
-[LOT_GRAPHES_CREUX](../dev/LOT_GRAPHES_CREUX.md).
+- **Wide (underdetermined) sparse systems.** There is no solver:
+  `OxiBLAS.qr` refuses a wide matrix with an `ArgumentError`, and so does
+  `A \ b`.
+- **Sparse QR without rank detection.** It is not rank-revealing:
+  `SingularException` on a numerically rank-deficient matrix.
+- **Sparse destination refused.** A solution is dense.
+- **Inverse refused.** `OxiBLAS.inv` of a sparse matrix raises an
+  `ArgumentError`: factorize and solve instead.
+- **No failure state.** The sparse LU and Cholesky engines raise the standard
+  exception even with `check=false`.
+- **`SparseMatrixCSC` unchanged.** OxiBLAS adds no `LinearAlgebra`/
+  `SparseArrays` method on this type: `S \ b` stays the one of SparseArrays
+  (UMFPACK, CHOLMOD). `OxiBLAS.ldiv(S, b)` and `OxiBLAS.lu(S)` use the
+  OxiBLAS engines.

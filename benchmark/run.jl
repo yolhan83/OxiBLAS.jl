@@ -137,29 +137,29 @@ const CASES=[
     Case("gemm_f64_512","GEMM","in-place",gemm_case(Float64,512)),
     Case("gemm_f32_512","GEMM","in-place",gemm_case(Float32,512)),
     Case("gemm_c64_256","GEMM","in-place",gemm_case(ComplexF64,256)),
-    Case("mul_sparse_dense","multiplication creuse","in-place",mul_sparse_dense()),
-    Case("mul_sparse_sparse","multiplication creuse","allocating",mul_sparse_sparse()),
+    Case("mul_sparse_dense","sparse multiplication","in-place",mul_sparse_dense()),
+    Case("mul_sparse_sparse","sparse multiplication","allocating",mul_sparse_sparse()),
     Case("syrk_f64_512","BLAS 3","in-place",syrk_case(512)),
     Case("trsm_f64_512","BLAS 3","in-place",trsm_case(512)),
-    Case("lu_f64_512","factorisations denses","allocating",lu_case(Float64,512)),
-    Case("lu_c64_256","factorisations denses","allocating",lu_case(ComplexF64,256)),
-    Case("cholesky_f64_512","factorisations denses","allocating",cholesky_case(Float64,512)),
-    Case("qr_f64_512x256","factorisations denses","allocating",qr_case(Float64,512,256)),
-    Case("svd_jacobi_f64_192","SVD et spectres","allocating",svd_case(Float64,192;algorithm=:jacobi)),
-    Case("svd_golubkahan_f64_192","SVD et spectres","allocating",svd_case(Float64,192;algorithm=:golub_kahan)),
-    Case("eigen_hermitian_f64_256","SVD et spectres","allocating",eigen_case(Float64,256)),
-    Case("solve_dense_ldiv","résolution","allocating",dense_solve_alloc(512)),
-    Case("solve_dense_ldiv!","résolution","in-place",dense_solve_inplace(512)),
-    Case("solve_sparse_backslash_spd","résolution creuse","allocating",sparse_backslash(;c=0.0)),
-    Case("solve_sparse_backslash_lu","résolution creuse","allocating",sparse_backslash(;c=0.3)),
-    Case("sparse_lu","factorisations creuses","allocating",sparse_lu()),
-    Case("sparse_cholesky","factorisations creuses","allocating",sparse_cholesky()),
-    Case("sparse_ldiv!","résolution creuse","in-place",sparse_ldiv_inplace()),
-    Case("einsum_abc_cd","tenseurs","allocating",einsum_alloc()),
-    Case("einsum!_abc_cd","tenseurs","in-place",einsum_inplace()),
-    Case("einsum_abcd_ebfd","tenseurs","allocating",einsum_contract4()),
-    Case("tridiagonal_solve","matrices structurées","allocating",tridiagonal_solve(10_000)),
-    Case("packed_spmv","matrices structurées","in-place",packed_spmv(512)),
+    Case("lu_f64_512","dense factorizations","allocating",lu_case(Float64,512)),
+    Case("lu_c64_256","dense factorizations","allocating",lu_case(ComplexF64,256)),
+    Case("cholesky_f64_512","dense factorizations","allocating",cholesky_case(Float64,512)),
+    Case("qr_f64_512x256","dense factorizations","allocating",qr_case(Float64,512,256)),
+    Case("svd_jacobi_f64_192","SVD and spectra","allocating",svd_case(Float64,192;algorithm=:jacobi)),
+    Case("svd_golubkahan_f64_192","SVD and spectra","allocating",svd_case(Float64,192;algorithm=:golub_kahan)),
+    Case("eigen_hermitian_f64_256","SVD and spectra","allocating",eigen_case(Float64,256)),
+    Case("solve_dense_ldiv","dense solve","allocating",dense_solve_alloc(512)),
+    Case("solve_dense_ldiv!","dense solve","in-place",dense_solve_inplace(512)),
+    Case("solve_sparse_backslash_spd","sparse solve","allocating",sparse_backslash(;c=0.0)),
+    Case("solve_sparse_backslash_lu","sparse solve","allocating",sparse_backslash(;c=0.3)),
+    Case("sparse_lu","sparse factorizations","allocating",sparse_lu()),
+    Case("sparse_cholesky","sparse factorizations","allocating",sparse_cholesky()),
+    Case("sparse_ldiv!","sparse solve","in-place",sparse_ldiv_inplace()),
+    Case("einsum_abc_cd","tensors","allocating",einsum_alloc()),
+    Case("einsum!_abc_cd","tensors","in-place",einsum_inplace()),
+    Case("einsum_abcd_ebfd","tensors","allocating",einsum_contract4()),
+    Case("tridiagonal_solve","structured matrices","allocating",tridiagonal_solve(10_000)),
+    Case("packed_spmv","structured matrices","in-place",packed_spmv(512)),
 ]
 
 function median_sample(b)
@@ -196,8 +196,8 @@ open(joinpath(outdir,"$stamp.csv"),"w") do io
     end
 end
 open(joinpath(outdir,"$stamp.md"),"w") do io
-    println(io,"# Banc haut niveau, $stamp\n\n$header\n")
-    println(io,"| Cas | Famille | Forme | OxiBLAS (ms) | Référence (ms) | OxiBLAS / référence | Octets OxiBLAS | Octets référence |")
+    println(io,"# High-level benchmark, $stamp\n\n$header\n")
+    println(io,"| Case | Family | Form | OxiBLAS (ms) | Reference (ms) | OxiBLAS / reference | OxiBLAS bytes | Reference bytes |")
     println(io,"|---|---|---|---|---|---|---|---|")
     for r in rows
         @printf(io,"| `%s` | %s | %s | %.3f | %.3f | %.2f | %d | %d |\n",r.name,r.family,r.form,1e3r.oxiblas_s,1e3r.reference_s,r.ratio,r.oxiblas_bytes,r.reference_bytes)

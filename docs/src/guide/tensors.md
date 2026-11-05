@@ -1,61 +1,61 @@
-# Tenseurs
+# Tensors
 
-## `einsum` et contractions
+## `einsum` and contractions
 
-`einsum(spec, A...)` évalue une notation d'Einstein sur des tableaux denses,
-des `SparseTensor` ou des matrices creuses. Les contractions par paires passent
-par le GEMM natif (TTGT).
+`einsum(spec, A...)` evaluates an Einstein notation on dense arrays,
+`SparseTensor`s or sparse matrices. Pairwise contractions go through the
+native GEMM (TTGT).
 
 ```@example tens
 using OxiBLAS
 A = randn(16, 16, 16); B = randn(16, 16)
-C = einsum("abc,cd->abd", A, B)            # allocation
-P = plan_einsum("abc,cd->abd", A, B)       # plan réutilisable
+C = einsum("abc,cd->abd", A, B)            # allocating
+P = plan_einsum("abc,cd->abd", A, B)       # reusable plan
 D = similar(C); ws = EinsumWorkspace(Float64)
-einsum!(D, P, A, B; workspace=ws)          # en place, workspace réutilisé
+einsum!(D, P, A, B; workspace=ws)          # in place, reused workspace
 D ≈ C
 ```
 
-- **Plans.** `plan_einsum(spec, A...; optimize)` choisit l'ordre des
-  contractions : `:greedy` par défaut, `:beam`, `:optimal`, ou `:none` pour
-  la contraction directe. Le plan est immuable et sûr entre threads.
-- **Évaluation en place.** `einsum!(C, plan, A...; α, β, workspace)` écrit
-  dans `C`. Les temporaires viennent de l'`EinsumWorkspace`.
-- **Plans découpés.** `plan_einsum_sliced` borne la mémoire en découpant le
-  calcul ; `einsum_layout_report` décrit les dispositions mémoire choisies.
-- **Contractions explicites.** `contract(A, B, axesA, axesB)` et `contract!`
-  contractent les axes donnés (conjugaisons explicites).
-- **Produits spécialisés.** `outer_product`, `mode_product(A, U, mode)`,
-  `batched_matmul` et `batched_matmul!`.
+- **Plans.** `plan_einsum(spec, A...; optimize)` chooses the contraction
+  order: `:greedy` by default, `:beam`, `:optimal`, or `:none` for the direct
+  contraction. A plan is immutable and thread-safe.
+- **In-place evaluation.** `einsum!(C, plan, A...; α, β, workspace)` writes
+  into `C`. Temporaries come from the `EinsumWorkspace`.
+- **Sliced plans.** `plan_einsum_sliced` bounds the memory by slicing the
+  computation; `einsum_layout_report` describes the chosen memory layouts.
+- **Explicit contractions.** `contract(A, B, axesA, axesB)` and `contract!`
+  contract the given axes (explicit conjugations).
+- **Specialized products.** `outer_product`, `mode_product(A, U, mode)`,
+  `batched_matmul` and `batched_matmul!`.
 
-## Tenseurs creux
+## Sparse tensors
 
-`SparseTensor(dims, coordonnées, valeurs)` stocke les indices linéaires triés
-(ordre colonne).
+`SparseTensor(dims, coordinates, values)` stores sorted linear indices
+(column-major order).
 
 ```@example tens
 X = SparseTensor((30, 30, 30), [(rand(1:30), rand(1:30), rand(1:30)) for _ in 1:500], randn(500))
 U = randn(30, 4)
-Y = einsum("abc,cz->abz", X, U)            # creux × dense
+Y = einsum("abc,cz->abz", X, U)            # sparse × dense
 size(Y)
 ```
 
-- Les produits creux × creux utilisent un SpGEMM par colonnes sur les
-  dépliages.
-- Les opérandes matriciels (CSR, CSC, `SparseMatrixCSC`, `SparseTensor` 2-D)
-  restent en CSC natif.
-- `einsum!` vers une destination creuse livre directement le résultat CSC.
-- Le résultat d'un calcul creux est un `SparseTensor`.
+- Sparse × sparse products use a column-wise SpGEMM on the unfoldings.
+- Matrix operands (CSR, CSC, `SparseMatrixCSC`, 2-D `SparseTensor`) stay in
+  native CSC.
+- `einsum!` into a sparse destination receives the CSC result directly.
+- The result of a sparse computation is a `SparseTensor`.
 
-## Décompositions
+## Decompositions
 
-| Fonction | Résultat |
+| Function | Result |
 |---|---|
 | `hosvd(A; ranks)` | Tucker (`TuckerFactor`) |
-| `tensor_train(A; maxrank, rtol)` | train de tenseurs (`TensorTrainFactor`) |
-| `cp_als(A, rank)` | CP par moindres carrés alternés (`CPFactor`) |
-| `reconstruct(F)` | tenseur reconstruit |
+| `tensor_train(A; maxrank, rtol)` | tensor train (`TensorTrainFactor`) |
+| `cp_als(A, rank)` | CP by alternating least squares (`CPFactor`) |
+| `reconstruct(F)` | reconstructed tensor |
 
-## Performances
+## Performance
 
-Le banc haut niveau compare `einsum` à TensorOperations ([Performances](performance.md)).
+The high-level suite compares `einsum` with TensorOperations
+([Performance](performance.md)).

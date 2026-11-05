@@ -1,80 +1,78 @@
-# Performances et benchmarks
+# Performance and benchmarks
 
-## Banc haut niveau
+## High-level suite
 
-`benchmark/run.jl` mesure les opérations qu'un utilisateur appelle, contre la
-référence appropriée :
+`benchmark/run.jl` measures the operations users call, against the matching
+reference:
 
-| Famille | Référence |
+| Family | Reference |
 |---|---|
-| GEMM, `OxiBLAS.mul!`, BLAS haut niveau | OpenBLAS (`LinearAlgebra`), Accelerate sur macOS |
-| LU, Cholesky, QR, SVD, valeurs propres | LAPACK d'OpenBLAS, Accelerate |
-| `A \ b`, `OxiBLAS.ldiv`, `ldiv!` | même problème avec `LinearAlgebra` (denses) ou SparseArrays (creux) |
-| factorisations et produits creux | SparseArrays (UMFPACK, CHOLMOD) |
+| GEMM, `OxiBLAS.mul!`, high-level BLAS | OpenBLAS (`LinearAlgebra`), Accelerate on macOS |
+| LU, Cholesky, QR, SVD, eigenvalues | OpenBLAS LAPACK, Accelerate |
+| `A \ b`, `OxiBLAS.ldiv`, `ldiv!` | the same problem with `LinearAlgebra` (dense) or SparseArrays (sparse) |
+| sparse factorizations and products | SparseArrays (UMFPACK, CHOLMOD) |
 | `einsum` | TensorOperations |
-| matrices structurées | types structurés de `LinearAlgebra` |
+| structured matrices | structured types of `LinearAlgebra` |
 
 ```sh
 julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-julia --project=benchmark --threads=1 benchmark/run.jl              # tous les cas
-julia --project=benchmark --threads=1 benchmark/run.jl gemm lu       # sélection
+julia --project=benchmark --threads=1 benchmark/run.jl              # every case
+julia --project=benchmark --threads=1 benchmark/run.jl gemm lu       # selection
 OXIBLAS_REFERENCE=accelerate julia --project=benchmark benchmark/run.jl
 ```
 
-**Méthode.**
+**Method.**
 
-- **Mêmes conditions.** Même problème mathématique, mêmes données et même
-  nombre de threads pour OxiBLAS et la référence.
-- **Vérification.** Chaque résultat est comparé à la référence avant les
-  mesures.
-- **Mesures à chaud.** Un premier appel compile et échauffe ; les temps
-  rapportés sont des médianes de mesures à chaud.
-- **Allocation séparée.** Les formes allouantes (`OxiBLAS.lu(A)`, `A \ b`) et
-  non allouantes (`ldiv!`, `gemm!` avec espace de travail) sont des cas
-  distincts.
-- **Compilation ciblée.** Seuls les cas sélectionnés sont compilés.
-- **Sorties.** Temps médian, octets alloués et rapport OxiBLAS/référence, en
-  CSV et en Markdown dans `benchmark/results/`.
+- **Same conditions.** Same mathematical problem, same data and same number of
+  threads for OxiBLAS and the reference.
+- **Verification.** Each result is compared with the reference before timing.
+- **Warm timings.** A first call compiles and warms up; the reported times are
+  medians of warm samples (Chairmarks).
+- **Separate allocation.** Allocating forms (`OxiBLAS.lu(A)`, `A \ b`) and
+  in-place forms (`ldiv!`, `gemm!` with a workspace) are distinct cases.
+- **Targeted compilation.** Only the selected cases are compiled.
+- **Outputs.** Median time, allocated bytes and OxiBLAS/reference ratio, in
+  CSV and Markdown under `benchmark/results/`.
 
-Les benchmarks ne sont pas lancés par la CI : les temps mesurés sur les
-machines GitHub ne sont pas assez stables.
+The benchmarks are not run by the CI: timings on GitHub runners are not
+stable enough.
 
-## Campagnes historiques
+## Historical campaigns
 
-Les micro-benchmarks de noyaux et les campagnes complètes (BLAS 1/2/3, LAPACK,
-SVD dense, creux, tenseurs, graphes) sont archivés dans `benchmark/archive/`.
-Ils restent utilisables pour de futures optimisations ; leurs rapports de
-campagne ne font pas partie du dépôt. La méthode historique et l'inspection du
-code machine sont décrites dans [PERFORMANCE](../dev/PERFORMANCE.md).
+The kernel micro-benchmarks and full campaigns (BLAS 1/2/3, LAPACK, dense SVD,
+sparse, tensors, graphs) are archived in `benchmark/archive/`. They remain
+usable for future optimization work; their campaign reports are not part of
+the repository.
 
-## Latence et précompilation
+## Latency and precompilation
 
-Le paquet précompile, avec PrecompileTools, une petite charge de chemins
-courants :
-- GEMM `Float32` et `Float64` ;
-- LU et Cholesky denses ;
-- une factorisation creuse et sa résolution ;
-- `OxiBLAS.ldiv` et `\` sur une `CSRMatrix` ;
-- une contraction `einsum`.
+The package precompiles, with PrecompileTools, a small workload of common
+paths:
 
-Le premier appel de ces chemins ne paie donc plus la compilation. Les autres
-types et variantes se compilent au premier usage.
+- `Float32` and `Float64` GEMM;
+- dense LU and Cholesky;
+- a sparse factorization and its solve;
+- `OxiBLAS.ldiv` and `\` on a `CSRMatrix`;
+- an `einsum` contraction.
 
-Mesures sur Apple M5 Max, Julia 1.14, chaque chemin dans un processus neuf
-(`benchmark/latency/run_all.jl`, résultats dans `benchmark/latency/latency_*.tsv`) :
+The first call of these paths therefore no longer pays the compilation. Other
+types and variants compile on first use.
 
-| Premier appel | Sans charge | Avec charge |
+Measurements on an Apple M5 Max, Julia 1.14, each path in a fresh process
+(`benchmark/latency/run_all.jl`, results in `benchmark/latency/latency_*.tsv`):
+
+| First call | Without workload | With workload |
 |---|---|---|
-| `gemm!` Float64 | 0,38 s | 0,09 s |
-| `OxiBLAS.lu(A) \ b` | 2,85 s | 0,10 s |
-| `OxiBLAS.cholesky` | 2,74 s | 0,01 s |
-| `OxiBLAS.ldiv(A, b)` | 13,5 s | 0,13 s |
-| `A \ b` creux (Cholesky, LU) | 7,2 s | 0,005 s |
-| `einsum` | 3,2 s | 0,06 s |
-| `using OxiBLAS` | 0,03 s | 0,15 s |
+| `gemm!` Float64 | 0.38 s | 0.09 s |
+| `OxiBLAS.lu(A) \ b` | 2.85 s | 0.10 s |
+| `OxiBLAS.cholesky` | 2.74 s | 0.01 s |
+| `OxiBLAS.ldiv(A, b)` | 13.5 s | 0.13 s |
+| sparse `A \ b` (Cholesky, LU) | 7.2 s | 0.005 s |
+| `einsum` | 3.2 s | 0.06 s |
+| `using OxiBLAS` | 0.03 s | 0.15 s |
 
-**Coût de la charge.** La précompilation du paquet passe d'environ 3 s à
-20 s, et son cache de 10 Mo à environ 50 Mo.
+**Cost of the workload.** Package precompilation goes from about 3 s to 20 s,
+and its cache from 10 MB to about 50 MB.
 
-**Désactiver la charge.** Pour la désactiver, ajouter `precompile_workload = false`
-dans la section `[OxiBLAS]` de `LocalPreferences.toml`.
+**Disabling the workload.** Add `precompile_workload = false` to the
+`[OxiBLAS]` section of `LocalPreferences.toml`.

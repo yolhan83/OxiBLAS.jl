@@ -1,16 +1,15 @@
-# Matrices structurées
+# Structured matrices
 
-OxiBLAS fournit deux stockages compacts et prend en charge les types
-structurés de `LinearAlgebra` par son API haut niveau.
+OxiBLAS provides two compact storages and supports the structured types of
+`LinearAlgebra` through its high-level API.
 
-## Stockages compacts et bandes
+## Packed and banded storage
 
-- **`PackedMatrix(data, n; uplo, kind, unit)`.** Stockage compact BLAS,
-  colonne par colonne. `pack_matrix(A; ...)` le construit à partir d'une
-  matrice ; `kind` vaut `:symmetric`, `:hermitian` ou `:triangular`.
-- **`BandedMatrix(data, m; kl, ku, kind=:general, uplo, unit)`.** Stockage
-  bande BLAS, `data[ku+1+i-j, j]` ; `band_matrix(A; ...)` copie seulement la
-  bande.
+- **`PackedMatrix(data, n; uplo, kind, unit)`.** BLAS packed storage, column
+  by column. `pack_matrix(A; ...)` builds it from a matrix; `kind` is
+  `:symmetric`, `:hermitian` or `:triangular`.
+- **`BandedMatrix(data, m; kl, ku, kind=:general, uplo, unit)`.** BLAS band
+  storage, `data[ku+1+i-j, j]`; `band_matrix(A; ...)` copies only the band.
 
 ```@example st
 using OxiBLAS, LinearAlgebra
@@ -21,47 +20,44 @@ spmv!(y, P, x)                 # y ← P·x
 y ≈ H * x
 ```
 
-| Opérations | Fonctions |
+| Operations | Functions |
 |---|---|
-| produits compacts | `spmv!`, `hpmv!`, `tpmv!`, `tpsv!`, `spr!`, `spr2!`, `hpr!`, `hpr2!` |
-| produits bande | `gbmv!`, `sbmv!`, `hbmv!`, `tbmv!`, `tbsv!` |
-| factorisations | `band_lu`, `band_cholesky`, `packed_cholesky` (`BandLUFactor`, `BandCholeskyFactor`, `PackedCholeskyFactor`) |
+| packed products | `spmv!`, `hpmv!`, `tpmv!`, `tpsv!`, `spr!`, `spr2!`, `hpr!`, `hpr2!` |
+| banded products | `gbmv!`, `sbmv!`, `hbmv!`, `tbmv!`, `tbsv!` |
+| factorizations | `band_lu`, `band_cholesky`, `packed_cholesky` (`BandLUFactor`, `BandCholeskyFactor`, `PackedCholeskyFactor`) |
 
-Ces opérations ne parcourent que les coefficients stockés. Elles acceptent
-`kernel=:auto` ou les demandes ISA de GEMM ; `:scalar` choisit la boucle
-générique.
+These operations only visit the stored coefficients. They accept
+`kernel=:auto` or the ISA requests of GEMM; `:scalar` selects the generic
+loop.
 
-## Types structurés de LinearAlgebra
+## Structured types of LinearAlgebra
 
 `OxiBLAS.lu`, `cholesky`, `ldlt`, `bunchkaufman`, `factorize`, `det`, `inv`,
-`eigen`, `svd`… acceptent `Diagonal`, `Bidiagonal`, `Tridiagonal`,
-`SymTridiagonal`, les matrices triangulaires et leurs enveloppes
-`Hermitian`/`Symmetric`. Le moteur choisi exploite la structure.
+`eigen`, `svd`… accept `Diagonal`, `Bidiagonal`, `Tridiagonal`,
+`SymTridiagonal`, the triangular matrices and their `Hermitian`/`Symmetric`
+wrappers. The chosen engine exploits the structure.
 
-| Type | Moteur |
+| Type | Engine |
 |---|---|
 | `Tridiagonal` | `band_lu`, O(n) |
-| `SymTridiagonal` réel | `band_cholesky` (`cholesky`), `eigen_tridiagonal` (`eigen`) |
-| `Bidiagonal` | substitution (`factorize`), noyau QR bidiagonal (`svd`) |
-| `Diagonal` | opérations directes, O(n) |
-| triangulaires | `TriangularEngine` : substitution, sans élimination |
-| `BandedMatrix` | `band_lu`, `band_cholesky`, multifrontal pour LDLᵀ |
+| real `SymTridiagonal` | `band_cholesky` (`cholesky`), `eigen_tridiagonal` (`eigen`) |
+| `Bidiagonal` | substitution (`factorize`), bidiagonal QR kernel (`svd`) |
+| `Diagonal` | direct operations, O(n) |
+| triangular | `TriangularEngine`: substitution, no elimination |
+| `BandedMatrix` | `band_lu`, `band_cholesky`, multifrontal for LDLᵀ |
 | `PackedMatrix` | `packed_cholesky`, `tpsv!` |
 
-**Les fonctions de LinearAlgebra restent intactes.** Les types structurés de
-Julia ne reçoivent que des méthodes `OxiBLAS.*` : `LinearAlgebra.lu(::Tridiagonal)`
-reste celle de Julia. Seuls `BandedMatrix` et `PackedMatrix`, types d'OxiBLAS,
-étendent les fonctions de `LinearAlgebra`.
+**The LinearAlgebra functions are left intact.** The structured types of Julia
+only receive `OxiBLAS.*` methods: `LinearAlgebra.lu(::Tridiagonal)` stays the
+one of Julia. Only `BandedMatrix` and `PackedMatrix`, which are OxiBLAS types,
+extend `LinearAlgebra` functions.
 
 ## Limitations
 
-- **Aucun moteur structuré** pour QR, LQ, Schur, Hessenberg et les spectres
-  non symétriques des types bande et tridiagonaux. Ces cas renvoient une
-  `MethodError`, sans conversion dense cachée.
-- **`PackedMatrix` indéfinie :** pas de Bunch–Kaufman compact. `factorize`
-  lève une `ArgumentError`.
-- **Pas de `lu!` sur les stockages bande :** il faudrait un tampon pour le
-  remplissage du pivotage.
-
-Conception historique :
-[COMPACT_PARALLEL_DESIGN](../dev/COMPACT_PARALLEL_DESIGN.md).
+- **No structured engine** for QR, LQ, Schur, Hessenberg and the
+  non-symmetric spectra of banded and tridiagonal types. These cases raise a
+  `MethodError`, without a hidden dense conversion.
+- **Indefinite `PackedMatrix`:** no packed Bunch–Kaufman. `factorize` raises an
+  `ArgumentError`.
+- **No `lu!` on banded storage:** it would need a buffer for the fill-in of
+  pivoting.

@@ -13,15 +13,15 @@ const SRC=joinpath(@__DIR__,"src")
 
 # ---- API reference by source family ---------------------------------------------
 const FAMILIES=[
-    ("api","API haut niveau (non exportée)","Fonctions homonymes de `LinearAlgebra`, propres à OxiBLAS et non exportées : on les appelle `OxiBLAS.lu`, `OxiBLAS.ldiv`, etc. Elles sont distinctes des fonctions de `LinearAlgebra` (`OxiBLAS.lu !== LinearAlgebra.lu`). Les types de factorisation sont des sous-types de `LinearAlgebra.Factorization`."),
-    ("blas","BLAS 1, 2, 3 et GEMM",""),
-    ("lapack","Factorisations denses et LAPACK",""),
-    ("structured","Matrices structurées (compactes et bandes)",""),
-    ("sparse","Matrices creuses",""),
-    ("graphs","Graphes et ordonnancements",""),
-    ("spectral","Algorithmes spectraux et itératifs",""),
-    ("tensors","Tenseurs",""),
-    ("utils","Utilitaires, matériel et précision",""),
+    ("api","High-level API (not exported)","Functions named like those of `LinearAlgebra`, owned by OxiBLAS and not exported: call them as `OxiBLAS.lu`, `OxiBLAS.ldiv`, etc. They are distinct from the functions of `LinearAlgebra` (`OxiBLAS.lu !== LinearAlgebra.lu`). The factorization types are subtypes of `LinearAlgebra.Factorization`."),
+    ("blas","BLAS 1, 2, 3 and GEMM",""),
+    ("lapack","Dense factorizations and LAPACK",""),
+    ("structured","Structured matrices (packed and banded)",""),
+    ("sparse","Sparse matrices",""),
+    ("graphs","Graphs and orderings",""),
+    ("spectral","Spectral and iterative algorithms",""),
+    ("tensors","Tensors",""),
+    ("utils","Utilities, hardware and precision",""),
 ]
 # The documented names of the high-level API are not exported: they are
 # collected from the docstrings whose source file is in src/api/.
@@ -70,7 +70,7 @@ function reference_pages()
         open(joinpath(out,"$fam.md"),"w") do io
             println(io,"# $title\n")
             isempty(intro) || println(io,intro,"\n")
-            println(io,"Sources : `src/$fam/`.\n")
+            println(io,"Sources: `src/$fam/`.\n")
             if !isempty(docnames)
                 println(io,"```@docs")
                 foreach(n->println(io,"OxiBLAS.$n"),docnames)
@@ -78,19 +78,19 @@ function reference_pages()
             end
             ext=sort(unique(get(foreign,fam,String[])))
             if !isempty(ext)
-                println(io,"## Méthodes OxiBLAS de fonctions d'autres modules\n")
-                println(io,"Ces fonctions appartiennent à `LinearAlgebra`, `SparseArrays` ou `Base` ; OxiBLAS leur ajoute des méthodes pour ses propres types (voir les guides) :\n")
+                println(io,"## OxiBLAS methods of other modules' functions\n")
+                println(io,"These functions belong to `LinearAlgebra`, `SparseArrays` or `Base`; OxiBLAS adds methods for its own types to them (see the guides):\n")
                 println(io,join(("`$n`" for n in ext),", "),"\n")
             end
             if !isempty(bare)
-                println(io,"## Fonctions exportées sans docstring\n")
-                println(io,"Leur convention d'appel est décrite dans les guides ; une docstring reste à écrire.\n")
+                println(io,"## Exported functions without a docstring\n")
+                println(io,"Their calling convention is described in the guides; a docstring is still to be written.\n")
                 println(io,join(("`$n`" for n in bare),", "),"\n")
             end
         end
         push!(pages,"reference/$fam.md")
     end
-    "Référence de l'API"=>vcat(["reference/index.md"],pages)
+    "API reference"=>vcat(["reference/index.md"],pages)
 end
 
 reference=reference_pages()
@@ -108,8 +108,8 @@ makedocs(;
     format=Documenter.HTML(;prettyurls=get(ENV,"CI","false")=="true",edit_link=nothing,
                             size_threshold=nothing,size_threshold_warn=1024^2,search_size_threshold_warn=1024^2,collapselevel=1),
     pages=[
-        "Accueil"=>"index.md",
-        "Guide"=>[
+        "Home"=>"index.md",
+        "Guides"=>[
             "guide/blas.md",
             "guide/factorizations.md",
             "guide/highlevel.md",
@@ -120,14 +120,12 @@ makedocs(;
             "guide/performance.md",
         ],
         reference,
-        "Développement"=>vcat(["dev/index.md"],
-            ["dev/$f" for f in sort(filter(f->endswith(f,".md") && f!="index.md",readdir(joinpath(SRC,"dev"))))]),
     ],
     # Exported names must all appear (with or without docstring, see the
     # reference pages); internal helpers with a docstring are not listed.
     checkdocs=:exports,
-    # The archived development pages name files of the repository that are
-    # not pages (logs, CSV, source files): reported, not fatal.
+    # Pages may name repository files that are not pages (source files):
+    # reported, not fatal.
     warnonly=[:cross_references,:missing_docs],
 )
 if get(ENV,"GITHUB_ACTIONS","false")=="true"

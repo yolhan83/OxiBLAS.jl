@@ -1,212 +1,330 @@
-# 0.6.0-dev — Restructuration du paquet (4 novembre 2026)
+# Changelog
 
-- **Sources.** Elles sont rangées par famille sous `src/` : `utils/`, `blas/`,
+Campaign reports and the development journals of versions 0.1–0.6 are kept
+outside the repository; the entries below summarize them.
+
+## 0.6.0-dev — package restructuring (4 November 2026)
+
+- **Sources.** Grouped by family under `src/`: `utils/`, `blas/`,
   `structured/`, `lapack/`, `sparse/`, `graphs/`, `spectral/`, `tensors/`,
-  `api/`. Il n'y a toujours qu'un seul module `OxiBLAS`, et l'ordre des
-  `include` n'a pas changé. Les 3 672 signatures de méthodes et les exports
-  sont identiques avant et après.
-- **Précompilation.** `src/precompile.jl` (PrecompileTools) couvre GEMM
-  Float32/Float64, LU et Cholesky denses, `\` et `OxiBLAS.ldiv` sur les
-  formats creux, et `einsum`. Le premier `OxiBLAS.ldiv(A, b)` passe de
-  13,5 s à 0,13 s. La charge se désactive par la préférence
+  `api/`. There is still a single `OxiBLAS` module, and the `include` order is
+  unchanged. The 3,672 method signatures and the exports are identical before
+  and after.
+- **Precompilation.** `src/precompile.jl` (PrecompileTools) covers GEMM
+  Float32/Float64, dense LU and Cholesky, `\` and `OxiBLAS.ldiv` on the sparse
+  formats, and `einsum`. The first `OxiBLAS.ldiv(A, b)` drops from 13.5 s to
+  0.13 s. The workload is disabled with the preference
   `precompile_workload = false`.
 - **Tests.**
-  - `test/<famille>/`, prélude commun `testsetup.jl` et helpers partagés dans
-    `test/helpers/` : chaque fichier tourne seul.
-  - Groupes `core` (CI) et `extended`, et une famille à la demande
-    (`OXIBLAS_TEST_GROUP`), avec une ligne de progression par fichier
-    (`groups.jl`).
-  - Les tests de la campagne SVD dense sont branchés.
-  - Tous les tests et fixtures liés à la référence Rust sont retirés du paquet.
+  - `test/<family>/`, a shared prelude `testsetup.jl` and shared helpers in
+    `test/helpers/`: every file runs on its own.
+  - `core` (CI) and `extended` groups, and any family on demand
+    (`OXIBLAS_TEST_GROUP`), with one progress line per file (`groups.jl`).
+  - The dense SVD campaign tests are wired in.
+  - Every test and fixture tied to the Rust reference is removed from the
+    package.
+- **Julia 1.10 to 1.13 compatibility.** `hcat`/`vcat` signatures restricted to
+  `<:Number` element types and disambiguating `LinearAlgebra.mul!` and `\`
+  methods (dispatch only, no runtime cost). The core tests pass on 1.10, 1.12,
+  1.13 and 1.14-alpha.
 - **Benchmarks.**
-  - Nouveau banc haut niveau `benchmark/run.jl` (Chairmarks), contre
-    OpenBLAS/Accelerate, SparseArrays et TensorOperations, avec vérification
-    préalable de chaque résultat.
-  - Les campagnes historiques sont archivées dans `benchmark/archive/`.
-  - Les programmes et scripts Rust sont sortis du paquet.
-- **Documentation.**
-  - Documenter (`docs/make.jl`), avec une page d'accueil et huit guides.
-  - Une référence générée par famille de sources.
-  - Les rapports, et les journaux de développement conservés dans
-    `docs/src/dev/`.
-- **CI.** Trois workflows GitHub Actions :
-  - `CI.yml` : tests courants et QA, Linux et macOS, Julia 1.10 et 1, 1 et
-    4 threads, cible CPU générique ;
-  - `Extended.yml` : manuel et hebdomadaire ;
-  - `Documentation.yml` : construction sur PR, déploiement GitHub Pages sur
+  - New high-level suite `benchmark/run.jl` (Chairmarks), against
+    OpenBLAS/Accelerate, SparseArrays and TensorOperations, with each result
+    checked before timing.
+  - The historical campaigns are archived in `benchmark/archive/`.
+  - The Rust programs and scripts are no longer part of the package.
+- **Documentation.** Documenter (`docs/make.jl`), with a home page, eight
+  guides and a reference generated per source family.
+- **CI.** Three GitHub Actions workflows:
+  - `CI.yml`: core tests and QA, Linux and macOS, Julia 1.10 and 1, 1 and 4
+    threads, generic CPU target;
+  - `Extended.yml`: manual and weekly;
+  - `Documentation.yml`: build on pull requests, GitHub Pages deployment on
     `main`.
 
-# 0.6.0-dev — Solveurs sparse bas niveau (4 novembre 2026)
+## 0.6.0-dev — linear-solve API, Core.Box campaign, SVD (4 November 2026)
 
-- Analyse symbolique : AMD natif (`amd_ordering`, CSparse `cs_amd`), arbre d'élimination, postordre (pondéré par les comptes de colonnes), comptes de colonnes en O(nnz(A)·α).
-- `multifrontal_cholesky` supernodal : supernœuds relâchés de CHOLMOD, largeur non plafonnée, pile de blocs de contribution, kernel de front bloqué en place jusqu'à f = 192 puis POTRF/TRSM/HERK ; bascule simpliciale (up-looking) quand flops/nnz(L) < 40 (`supernodal=:auto`). Résolution par supernœuds. `PosDefException` donne la colonne de A.
-- Parallélisme entre sous-arbres du Cholesky supernodal (tâches `@spawn`, tampons par tâche, colonnes de L disjointes), puis haut de l'arbre avec les kernels denses parallèles.
-- `sparse_qr(A; pivot=false, ordering)` : QR multifrontal (supernœuds relâchés de l'arbre des colonnes, lignes en escalier, front entier factorisé avec contribution trapézoïdale, panneaux WY), ordres `:natural`, `:amd` (AMD de AᵀA) ou vecteur ; `pivot=true` inchangé. `sparse_apply_q!` et `solve` plus rapides.
-- `sparse_cholesky` exact par ce code en ordre naturel (zéros des supernœuds relâchés retirés) ; IC0/ICT inchangés.
-- `multifrontal_lu` : `ordering=:auto` par défaut. Stratégie symétrique de UMFPACK (motif symétrique, diagonale pleine) : supernœuds de A+Aᵀ, fronts carrés, pivotage partiel à seuil parmi les lignes complètement sommées, pivots reportés au parent. Motif non symétrique : singletons puis Gilbert–Peierls avec AMD(AᵀA). Ordres explicites : moteur à éléments-lignes inchangé. Résolution par lignes CSR.
-- `sparse_lu` exact : argument `ordering` (`:auto` par défaut, `:natural`, `:amd_ata`, vecteur), champ `q` dans `SparseLUFactor` (A[p,q] = L·U) ; Gilbert–Peierls left-looking en ordre donné ; ILUT inchangé (ordre naturel). `multifrontal_lu` : seuil de pivot par défaut 0,1 ; cœurs non symétriques par un LU multifrontal sur les fronts de colonnes (pivotage à seuil préférant la ligne la plus creuse, lignes restantes acheminées au front de leur première colonne non nulle).
-- `colamd_ordering` (portage de COLAMD de SuiteSparse, BSD-3, permutations identiques) et `sparse_ordering(:colamd)` ; ordre du cœur du LU non symétrique, option `:colamd` de `sparse_lu` et `sparse_qr`. Pivots du LU sur fronts de colonnes : longueurs de lignes mises à jour à chaque pivot, colonne pivot la plus creuse du bloc ; largeur des fronts plafonnée à 256 colonnes.
-- `minimum_degree_ordering` et `multiple_minimum_degree` : graphe quotient avec supervariables et degré externe exact (MMD : élimination multiple).
-- `sparse_ldlt` : multifrontal supernodal, Bunch–Kaufman (1×1, 2×2) parmi les variables complètement sommées, seuil 0,01 (MA57) quand le maximum de la colonne est hors des candidats, pivots reportés sinon ; API inchangée (`hermitian=false`, `pivot=:none`, inertie). Résolution par colonnes directes.
-- `sparse_triangular_solve` : kernels CSR/CSC natifs sans conversion.
-- BLAS3 : pas de mise à l'échelle pour β = 1 dans le produit triangulaire packé (HERK/SYRK).
-- Rapports : `reports/SPARSE_DIRECT_DIAGNOSTIC_20261103.md`, `reports/SPARSE_CHOLESKY_ETAPE3_20261104.md`, `reports/SPARSE_LU_LDLT_ETAPES4_5_20261104.md`, `reports/SPARSE_QR_ETAPE6_20261104.md`, `reports/SPARSE_DIRECT_PARALLELE_20261104.md`.
+- **Linear solves.** `A \ B` and `LinearAlgebra.ldiv!` on the OxiBLAS sparse
+  formats and their wrappers, `OxiBLAS.ldiv` and `OxiBLAS.ldiv!` with a matrix
+  or a factorization, O(nnz) `istril`/`istriu`/`ishermitian` on the OxiBLAS
+  formats, and a factorization choice that follows SparseArrays (triangular,
+  Hermitian, square, tall).
+- **QA.** Aqua (piracy, ambiguities, unbound type parameters), ExplicitImports
+  and `Test.detect_closure_boxes`. Seven methods with unbound type parameters
+  were fixed (SIMD helpers, `EigenFactor`, `SVDFactor`), which also fixed
+  `svd_truncated(...; vectors=false)`.
+- **Closure boxes.** The 39 `Core.Box` reported by
+  `detect_closure_boxes` were removed. This fixed two data races
+  (`_pivot_lu_factor`, `gemm_cache_oblivious!`): rook-pivoted LU went from
+  83 ms to 0.6 ms at n = 192, Float16 `syrk!` from 18 ms to 0.07 ms.
+- **Dense SVD.** Chained rotation packets in the Golub–Kahan QR (the shared
+  column stays in SIMD registers) and a safe-range Givens rotation (as
+  LAPACK's dlartg). With vectors, at 192×192: Float32 from 5.3 to 2.5 ms,
+  Float64 from 8.1 to 4.8 ms.
 
-# 0.6.0-dev — SparseArrays, tenseurs sparse, `OxiBLAS.mul!` (3 novembre 2026)
+## 0.6.0-dev — low-level sparse solvers (4 November 2026)
 
-- SparseArrays devient une dépendance directe. Conversions dans les deux sens entre `SparseMatrixCSC`/`SparseVector` et les formats OxiBLAS sans passer par le dense ; `CSCMatrix(S)` et `CSRMatrix(transpose(S))` partagent le stockage de `S`. Les routines sparse d'OxiBLAS (`sparse_mul!`, `sparse_matmul`, solveurs directs et itératifs, `ilu0`) acceptent les matrices SparseArrays.
-- Constructeurs des formats sparse OxiBLAS étendus aux types `GenericFloat` (BigFloat compris), sans changer les chemins Float32/Float64.
-- `SparseTensor{T,N}` (COO, indices linéaires triés) ; `einsum`, `einsum!`, `contract`, `contract!` et les plans acceptent des opérandes sparse (mélanges dense/sparse, traces, diagonales, produits extérieurs, ellipses) avec sortie `:auto`, `:dense` ou `:sparse` et destinations sparse.
-- `OxiBLAS.mul!(C,A,B[,α,β])` et `OxiBLAS.mul(A,B)`, non exportés et distincts de `LinearAlgebra.mul!` (ni étendu ni aliasé) : dense, types structurés de LinearAlgebra (y compris sur contenu sparse, sans densification), SparseArrays, formats OxiBLAS, destinations sparse ; conversion de type qui garde le format ; copie des opérandes dont le stockage chevauche `C`.
-- Types sparse OxiBLAS dans la hiérarchie SparseArrays : CSR, CSC, COO, DIA, ELL, BSR, BSC, HYB, SELL `<: AbstractSparseMatrix`, `SparseTensor{T,N} <: AbstractSparseArray{T,Int,N}` (l'ordre 1 est un `AbstractSparseVector`). `CSCMatrix` n'hérite pas d'`AbstractSparseMatrixCSC`, afin que les opérations sur nos types finissent dans les kernels OxiBLAS (`reports/ARCHITECTURE_CSC_A_vs_B.md`). Indices de ligne de `CSCMatrix` triés par colonne ; `copy`/`similar`/`zero` gardent le format (CSC, CSR, COO).
-- `Base.*` défini pour les types sparse OxiBLAS uniquement (et leurs transposées et wrappers structurés), via `OxiBLAS.mul` : 16 méthodes, aucune ambiguïté de dispatch (test dédié). `CSC * CSC` reste CSC, les autres produits OxiBLAS donnent du CSR.
-- Opérations Base/LinearAlgebra sur les types sparse OxiBLAS, toutes dans des kernels OxiBLAS (aucun kernel SparseArrays ou LinearAlgebra, aucun BLAS externe) : `LinearAlgebra.mul!` (vers `OxiBLAS.mul!`), `+`/`-` (`sparse_add`), transpositions et `permutedims` (`sparse_transpose`), `SparseArrays.permute` (`sparse_permute`), `norm`/`opnorm` 1 et Inf (`sparse_norm`) ; indexation et `setindex!`, broadcast et `map` (style `OxiSparseStyle`), réductions (`sum`, `maximum`, `count`, `any`, `all`, par dimension), `==`, `findall`, `findnz`, `dropzeros`/`droptol!`, `triu`/`tril`, `diag`, `tr`, `issymmetric`/`ishermitian`, `dot`, `kron`, concaténation, `reverse`, `circshift`, `vec`/`reshape`, conversion dense, `zero`/`similar` (`src/sparse_base.jl`, `src/sparse_base_ops.jl`). Coût en O(nnz) pour les `SparseTensor` de tout ordre. Les solveurs (`\`, `lu`, `cholesky`, `qr`) ne sont pas encore branchés.
-- Tests : `test/sparse_interop.jl`, `test/mul_layer.jl`, `test/sparse_supertypes.jl`, `test/sparse_base_ops.jl`. Banc (non lancé) : `benchmark/sparse_worker.jl`, cible `OXIBLAS_TARGET=sparse`.
+- **Symbolic analysis.** Native AMD (`amd_ordering`, CSparse `cs_amd`),
+  elimination tree, postorder weighted by column counts, column counts in
+  O(nnz(A)·α).
+- **Supernodal `multifrontal_cholesky`.** CHOLMOD relaxed supernodes,
+  uncapped width, stack of contribution blocks, in-place blocked front kernel
+  up to f = 192 then POTRF/TRSM/HERK; simplicial (up-looking) fallback when
+  flops/nnz(L) < 40 (`supernodal=:auto`). Supernodal solve. `PosDefException`
+  reports the column of A.
+- **Parallel supernodal Cholesky.** Tasks across subtrees (`@spawn`,
+  per-task buffers, disjoint columns of L), then the top of the tree with the
+  parallel dense kernels.
+- **`sparse_qr(A; pivot=false, ordering)`.** Multifrontal QR (relaxed
+  supernodes of the column tree, staircase rows, whole front factorized with a
+  trapezoidal contribution, WY panels); orderings `:natural`, `:amd` (AMD of
+  AᵀA) or a vector; `pivot=true` unchanged. Faster `sparse_apply_q!` and
+  `solve`.
+- **`sparse_cholesky`.** Exact through this code in natural order (zeros of
+  the relaxed supernodes removed); IC0/ICT unchanged.
+- **`multifrontal_lu`.**
+  - `ordering=:auto` by default.
+  - UMFPACK's symmetric strategy (symmetric pattern, full diagonal): supernodes
+    of A+Aᵀ, square fronts, threshold partial pivoting among fully summed rows,
+    pivots delayed to the parent.
+  - Unsymmetric pattern: singletons, then Gilbert–Peierls with AMD(AᵀA).
+  - Explicit orderings: the row-element engine is unchanged. Solve by CSR rows.
+  - Default pivot threshold 0.1. Unsymmetric cores go through a multifrontal LU
+    on column fronts (threshold pivoting that prefers the sparsest row,
+    remaining rows routed to the front of their first nonzero column).
+- **Exact `sparse_lu`.** `ordering` argument (`:auto` by default, `:natural`,
+  `:amd_ata`, vector), field `q` in `SparseLUFactor` (A[p,q] = L·U),
+  left-looking Gilbert–Peierls in the given order; ILUT unchanged (natural
+  order).
+- **`colamd_ordering`.** Port of SuiteSparse's COLAMD, BSD-3, identical
+  permutations, plus `sparse_ordering(:colamd)`. It is the core ordering of the
+  unsymmetric LU and the `:colamd` option of `sparse_lu` and `sparse_qr`. Column
+  front pivots: row lengths updated at each pivot, sparsest pivot column of the
+  block, front width capped at 256 columns.
+- **`minimum_degree_ordering`, `multiple_minimum_degree`.** Quotient graph with
+  supervariables and exact external degree (MMD: multiple elimination).
+- **`sparse_ldlt`.** Supernodal multifrontal, Bunch–Kaufman (1×1, 2×2) among
+  fully summed variables, threshold 0.01 (MA57) when the column maximum is
+  outside the candidates, delayed pivots otherwise. API unchanged
+  (`hermitian=false`, `pivot=:none`, inertia). Solve by direct columns.
+- **`sparse_triangular_solve`.** Native CSR/CSC kernels, without conversion.
+- **BLAS 3.** No scaling for β = 1 in the packed triangular product
+  (HERK/SYRK).
 
-# 0.6.0-dev — LAPACK, première partie (3 novembre 2026)
+## 0.6.0-dev — SparseArrays, sparse tensors, `OxiBLAS.mul!` (3 November 2026)
 
-- `lu_factor` (getrf) : panneau récursif (getrf2), échanges de lignes groupés par panneau (laswp), anticipation parallèle (le panneau suivant est factorisé pendant la mise à jour de la matrice restante), blocs de 128, feuilles de 32 (réel) ou 16 (complexe) colonnes.
-- `cholesky_factor` (potrf) : récursif (potrf2) via TRSM/HERK ; feuilles de 64 (réel) ou 32 (complexe) colonnes.
-- QR (geqrf) : forme WY compacte, T calculé par GEMM, tampons réutilisés, panneau en BLAS 1 vectorisé, taille de panneau selon la forme. `apply_q!` (ormqr/unmqr) et `qr_q`/`F.Q` (orgqr/ungqr) bloqués, en parallèle par découpe des seconds membres.
-- `qr_pivoted` (geqp3) : mise à jour des normes de colonnes avec le critère de recalcul de LAPACK.
-- `ldlt_factor` (sytrf) : Bunch–Kaufman bloqué (lasyf), mêmes choix de pivots.
-- Solves sur vecteur via TRSV ; `native_inverse` (getri) via TRTRI ; nouveau `cholesky_inverse` (potri : TRTRI puis LAUUM récursif, HERK unique jusqu'à N = 64).
-- BLAS : `trsv!` complexe transposé ou adjoint via les produits scalaires BLAS 1 ; test d'alias de `gemm!` à travers vues et transpositions ; le pool de panneaux garde les plus grands.
-- Tests : `test/lapack_dense.jl`. Harness : cible `OXIBLAS_TARGET=lapack`, cas LQ, QR rectangulaire, `apply_q`, `potrs` et `potri` équivalents. Voir `reports/LAPACK1_OPTIMISATION_20261103.md`.
+- **SparseArrays becomes a direct dependency.**
+  - Conversions both ways between `SparseMatrixCSC`/`SparseVector` and the
+    OxiBLAS formats, without going through dense storage; `CSCMatrix(S)` and
+    `CSRMatrix(transpose(S))` share the storage of `S`.
+  - The OxiBLAS sparse routines (`sparse_mul!`, `sparse_matmul`, direct and
+    iterative solvers, `ilu0`) accept SparseArrays matrices.
+- **Generic element types.** Constructors of the OxiBLAS sparse formats
+  extended to `GenericFloat` types (BigFloat included), without changing the
+  Float32/Float64 paths.
+- **`SparseTensor{T,N}`.** COO with sorted linear indices. `einsum`,
+  `einsum!`, `contract`, `contract!` and the plans accept sparse operands:
+  dense/sparse mixes, traces, diagonals, outer products, ellipses, with output
+  `:auto`, `:dense` or `:sparse` and sparse destinations.
+- **`OxiBLAS.mul!(C,A,B[,α,β])` and `OxiBLAS.mul(A,B)`.** Not exported and
+  distinct from `LinearAlgebra.mul!` (neither extended nor aliased). They cover:
+  - dense matrices, LinearAlgebra structured types (including sparse content,
+    without densification), SparseArrays, OxiBLAS formats, sparse
+    destinations;
+  - type conversion that keeps the format;
+  - a copy of operands whose storage overlaps `C`.
+- **Place in the SparseArrays hierarchy.**
+  - The sparse formats CSR, CSC, COO, DIA, ELL, BSR, BSC, HYB and SELL are
+    `<: AbstractSparseMatrix`.
+  - `SparseTensor{T,N} <: AbstractSparseArray{T,Int,N}`; order 1 is an
+    `AbstractSparseVector`.
+  - `CSCMatrix` does not inherit from `AbstractSparseMatrixCSC`, so that
+    operations on these types end in OxiBLAS kernels.
+  - `CSCMatrix` row indices are sorted per column; `copy`/`similar`/`zero`
+    keep the format (CSC, CSR, COO).
+- **`Base.*` on the OxiBLAS sparse types only.** Also on their transposes and
+  structured wrappers, through `OxiBLAS.mul`: 16 methods, no dispatch
+  ambiguity (dedicated test). `CSC * CSC` stays CSC; the other OxiBLAS
+  products give CSR.
+- **Base/LinearAlgebra operations on the OxiBLAS sparse types.** All run in
+  OxiBLAS kernels (no SparseArrays or LinearAlgebra kernel, no external BLAS):
+  - `LinearAlgebra.mul!` (to `OxiBLAS.mul!`), `+`/`-` (`sparse_add`),
+    transposes and `permutedims` (`sparse_transpose`), `SparseArrays.permute`
+    (`sparse_permute`), 1 and Inf `norm`/`opnorm` (`sparse_norm`);
+  - indexing and `setindex!`, broadcast and `map` (`OxiSparseStyle`),
+    reductions (`sum`, `maximum`, `count`, `any`, `all`, per dimension), `==`,
+    `findall`, `findnz`, `dropzeros`/`droptol!`;
+  - `triu`/`tril`, `diag`, `tr`, `issymmetric`/`ishermitian`, `dot`, `kron`,
+    concatenation, `reverse`, `circshift`, `vec`/`reshape`, dense conversion,
+    `zero`/`similar`.
 
-# 0.6.0-dev — BLAS 3 (3 novembre 2026)
+  The cost is O(nnz) for `SparseTensor`s of any order.
 
-- Micro-noyau GEMM complexe à deux accumulateurs (`a·Re(b)`, `a·Im(b)`), recombinés à l'écriture ; formes de registres ComplexF64 NEON 1×4×3 et AVX2 2×2×3.
-- Tuiles de bord GEMM calculées par le noyau SIMD dans une tuile temporaire, au lieu du noyau scalaire.
-- `syrk`/`herk`/`syr2k`/`her2k`/`gemmt` : GEMM packée restreinte au triangle (tuiles hors triangle sautées, tuiles diagonales masquées) ; l'ancien ordonnancement par tuiles reste le repli.
-- Feuilles `trmm`/`trsm` réelles d'ordre ≤ 8, à gauche et à droite : noyaux générés, déroulés et vectorisés.
-- Parallèle : workers selon le travail (≈ 100 µs séquentielles par worker), thread appelant actif, grille 2D pour GEMM ; panneaux internes réutilisés depuis un pool (au plus 4 par type) au lieu d'une allocation par appel.
-- Harness : cible `OXIBLAS_TARGET=level3`, échantillonnage direct (sans BenchmarkTools ni échauffement supplémentaire pour les appels longs), `full_case` non spécialisé par type. Voir `reports/BLAS3_OPTIMISATION_20261103.md`.
+## 0.6.0-dev — LAPACK, first part (3 November 2026)
 
-# 0.6.0-dev — BLAS 2 (3 novembre 2026)
+- **`lu_factor` (getrf).** Recursive panel (getrf2), row swaps grouped per
+  panel (laswp), lookahead (the next panel is factorized during the trailing
+  update), blocks of 128, leaves of 32 (real) or 16 (complex) columns.
+- **`cholesky_factor` (potrf).** Recursive (potrf2) through TRSM/HERK; leaves
+  of 64 (real) or 32 (complex) columns.
+- **QR (geqrf).** Compact WY form, T computed by GEMM, reused buffers,
+  vectorized BLAS 1 panel, panel size from the shape. `apply_q!`
+  (ormqr/unmqr) and `qr_q`/`F.Q` (orgqr/ungqr) are blocked, and run in
+  parallel by splitting the right-hand sides.
+- **`qr_pivoted` (geqp3).** Column norm updates with LAPACK's recomputation
+  criterion.
+- **`ldlt_factor` (sytrf).** Blocked Bunch–Kaufman (lasyf), same pivot
+  choices.
+- **Solves and inverses.** Vector solves through TRSV; `native_inverse`
+  (getri) through TRTRI; new `cholesky_inverse` (potri: TRTRI then recursive
+  LAUUM, a single HERK up to N = 64).
+- **BLAS.** Complex transposed or adjoint `trsv!` through BLAS 1 dot products;
+  `gemm!` alias test through views and transposes; the panel pool keeps the
+  largest panels.
 
-- `trsv`/`trmv`/`gemv`/`symv`/`hemv` : quatre colonnes fusionnées par passage (bloc diagonal 4×4 à part) ; produits complexes symétriques/hermitiens en quatre sommes réelles.
-- `ger`/`gerc`/`syr`/`her`/`syr2`/`her2` : coefficient par colonne puis boucle SIMD fusionnée.
-- `gbmv` réel et bandes étroites par accès direct à la bande ; `tbmv`/`tbsv` étroits par lignes, parties réelle/imaginaire séparées en ComplexF32 ; réductions compactes en `@simd` simple ; rang 2 compact en un passage.
-- Parallèle BLAS 2 : workers selon le trafic estimé (règle BLAS 1, appelant actif) ; `symv`/`hemv`/`spmv`/`hpmv`/`sbmv`/`hbmv` par colonnes à travail égal avec vecteurs partiels (triangle lu une fois) ; `parallel_threshold` vaut par défaut `nothing` (automatique), une valeur explicite garde l'ancienne règle. Corrige l'erreur `first` du `symv` parallèle.
-- Harness : cible `OXIBLAS_TARGET=level2` dans `benchmark/level1_targeted.py`, filtres `OXIBLAS_FULL_*` dans `full_worker.jl`, références `syr2`/`her2`. Voir `reports/BLAS2_OPTIMISATION_20261103.md`.
+## 0.6.0-dev — BLAS 3 (3 November 2026)
 
-# 0.6.0-dev — BLAS 1 (3 novembre 2026)
+- **Complex GEMM micro-kernel.** Two accumulators (`a·Re(b)`, `a·Im(b)`),
+  recombined at the store; ComplexF64 register shapes NEON 1×4×3 and AVX2
+  2×2×3.
+- **Edge tiles.** GEMM edge tiles are computed by the SIMD kernel in a
+  temporary tile, instead of the scalar kernel.
+- **`syrk`/`herk`/`syr2k`/`her2k`/`gemmt`.** Packed GEMM restricted to the
+  triangle (tiles outside it skipped, diagonal tiles masked); the former tile
+  schedule stays as the fallback.
+- **TRMM/TRSM leaves.** Real `trmm`/`trsm` leaves of order ≤ 8, left and
+  right: generated, unrolled and vectorized kernels.
+- **Parallelism.** Workers from the amount of work (≈ 100 µs of sequential
+  work per worker), the calling thread takes part, 2-D grid for GEMM. Internal
+  panels are reused from a pool (at most 4 per type) instead of being
+  allocated at every call.
 
-- `dotu`/`dotc` complexes en quatre sommes réelles SIMD ; `dotu`/`dotc` réels en `@simd` simple.
-- `dsdot`/`sdsdot` : somme Float64 réassociée (comme OpenBLAS), repli ordonné si non fini.
-- `iamax` en un passage par blocs avec clés entières ; `rotg` complexe sans `hypot` dans la plage sûre ; `nrm2` Float64 avec max vectorisé et échelle en puissance de deux.
-- Variantes `*_parallel` : noyaux SIMD par morceau, nombre de workers selon le trafic estimé (seuil 4 Mio), thread appelant actif ; `parallel_threshold` vaut par défaut `nothing` (automatique).
-- Harness BLAS 1 : mode parallèle réparé, références imprécises marquées, tableaux générés. Voir `reports/BLAS1_OPTIMISATION_20261103.md`.
+## 0.6.0-dev — BLAS 2 (3 November 2026)
 
-# 0.6.0-dev — implémentation, validation en attente
+- **`trsv`/`trmv`/`gemv`/`symv`/`hemv`.** Four columns fused per pass (4×4
+  diagonal block apart); complex symmetric/Hermitian products as four real
+  sums.
+- **`ger`/`gerc`/`syr`/`her`/`syr2`/`her2`.** Per-column coefficient, then a
+  fused SIMD loop.
+- **Banded and packed kernels.** Real `gbmv` and narrow bands through direct
+  band access; narrow `tbmv`/`tbsv` by rows, with real and imaginary parts
+  split in ComplexF32. Packed reductions use plain `@simd`, and the packed
+  rank-2 update is a single pass.
+- **Parallel BLAS 2.** Workers from the estimated traffic (BLAS 1 rule,
+  calling thread takes part). `symv`/`hemv`/`spmv`/`hpmv`/`sbmv`/`hbmv` work
+  by columns of equal work, with partial vectors (the triangle is read once).
+  `parallel_threshold` defaults to `nothing` (automatic); an explicit value
+  keeps the former rule. This also fixes the `first` error of the parallel
+  `symv`.
 
-Aucun test numérique ni benchmark exécuté pour cet incrément, conformément à
-la demande de l'utilisateur. Le portage complet reste inachevé. Voir
-`docs/DEVELOPMENT_v0.6.md` pour les API, garanties prévues et limites exactes.
+## 0.6.0-dev — BLAS 1 (3 November 2026)
 
-- Contextes, jobs et scratch BLAS 3 réutilisables ; lots parallèles sans
-  parallélisme GEMM imbriqué ; TRMM/TRSM sur seconds membres indépendants.
-- SIMD complexe compact et réductions fusionnées ; BLAS 2 denses/compacts
-  parallèles ; voie GEMM petite sortie sans packing et déroulage ComplexF32.
-- Panneaux LU/Cholesky réutilisés, HERK Cholesky ; LU complet/rook,
-  QR bloqué/pivoté, LDL/Bunch–Kaufman, solve expert et mixte complexe.
-- EVD généralisée hermitienne définie, Schur complexe réordonné et vecteurs
-  propres droits, réduction bidiagonale compacte.
-- COO/CSC, conversions, SpMM/SpGEMM, ILU0, GMRES/BiCGStab et Lanczos.
-- Contractions N-D, einsum et plans, lots N-D, HOSVD, TT-SVD, CP-ALS ;
-  tableaux Julia standards, sans type dense Tensor.
-- Autotuning strictement explicite, persistance contrôlée par environnement.
-  Aucun calibrage ni résultat de performance nouveau annoncé.
-- Nouveaux cas de test écrits ; base et archive v0.5 préservées.
+- **Dot products.** Complex `dotu`/`dotc` as four real SIMD sums; real
+  `dotu`/`dotc` with plain `@simd`. `dsdot`/`sdsdot`: reassociated Float64 sum
+  (as OpenBLAS), with an ordered fallback when non-finite.
+- **Other kernels.** Single-pass blocked `iamax` with integer keys; complex
+  `rotg` without `hypot` in the safe range; Float64 `nrm2` with a vectorized
+  max and a power-of-two scale.
+- **`*_parallel` variants.** SIMD kernels per chunk, number of workers from
+  the estimated traffic (4 MiB threshold), calling thread takes part;
+  `parallel_threshold` defaults to `nothing` (automatic).
 
-# 0.5.0 — stockage compact direct et parallélisme inter-tuiles
+## 0.6.0-dev — implementation
 
-- GBMV/SBMV/HBMV/TBMV/TBSV bornés à la bande, sans parcours logique dense.
-- SPMV/HPMV/TPMV/TPSV et SPR/SPR2/HPR/HPR2 par colonnes packed stockées.
-- Multiplications triangulaires sur place, pivots vérifiés avant substitution,
-  snapshots compacts en cas d'alias, paddings et diagonales unité ignorés.
-- AXPY SIMD LLVM réel contigu, largeurs dans le domaine des types pour éviter
-  les allocations par colonne, racines GC protégées et restes explicites.
-- SYRK/HERK/SYR2K/HER2K/GEMMT : tâches sur tuiles disjointes, panneaux propres
-  à chaque tâche et protection globale du workspace partagé ; GEMM interne
-  monothread lorsqu'un plan extérieur distribue déjà les tuiles.
-- Références denses/BLAS/Rust, vues, alias, lectures interdites, données non
-  finies structurelles et échelles extrêmes ; mesures 1/2/4/8 threads.
-- État de continuation actualisé ; sources et mesures v0.4 conservées.
+- **BLAS 3 and batches.** Reusable BLAS 3 contexts, jobs and scratch buffers;
+  parallel batches without nested GEMM parallelism; TRMM/TRSM on independent
+  right-hand sides.
+- **Packed kernels and BLAS 2.** Packed complex SIMD and fused reductions;
+  parallel dense and packed BLAS 2; packing-free GEMM path for small outputs
+  and ComplexF32 unrolling.
+- **Dense factorizations.** Reused LU/Cholesky panels, HERK in Cholesky;
+  complete/rook-pivoted LU, blocked and pivoted QR, LDL/Bunch–Kaufman, expert
+  and mixed-precision complex solves.
+- **Eigenvalue problems.** Definite Hermitian generalized EVD, reordered
+  complex Schur and right eigenvectors, compact bidiagonal reduction.
+- **Sparse.** COO/CSC, conversions, SpMM/SpGEMM, ILU0, GMRES/BiCGStab and
+  Lanczos.
+- **Tensors.** N-D contractions, einsum and plans, N-D batches, HOSVD, TT-SVD,
+  CP-ALS, on standard Julia arrays (no dense Tensor type).
+- **Autotuning.** Strictly explicit, with persistence controlled by the
+  environment.
 
-Le parallélisme compact, les lots/factorisations parallèles, le tuning complexe
-et la validation physique x86 restent à poursuivre.
+## 0.5.0 — direct packed storage and inter-tile parallelism
 
-# 0.4.0 — rotations modifiées et produits scalaires étendus
+- **Banded kernels.** GBMV/SBMV/HBMV/TBMV/TBSV bounded to the band, without a
+  dense logical sweep.
+- **Packed kernels.** SPMV/HPMV/TPMV/TPSV and SPR/SPR2/HPR/HPR2 by stored
+  packed columns.
+- **Triangular products.** In-place triangular multiplications, pivots checked
+  before substitution, packed snapshots on aliasing, paddings and unit
+  diagonals ignored.
+- **AXPY.** Contiguous real AXPY with LLVM SIMD, widths in the type domain to
+  avoid per-column allocations, GC roots protected and explicit remainders.
+- **Rank-k updates.** SYRK/HERK/SYR2K/HER2K/GEMMT run tasks on disjoint tiles,
+  with panels owned by each task and global protection of the shared
+  workspace. The inner GEMM is single-threaded when an outer plan already
+  distributes the tiles.
+- **Tests and measurements.** Dense/BLAS references, views, aliasing,
+  forbidden reads, structural non-finite data and extreme scales;
+  measurements on 1/2/4/8 threads.
 
-- ROTM Float32/Float64, paquets SIMD LLVM sur les sorties contiguës,
-  paramètres immuables ou vecteur BLAS, vues/strides,
-  paramètres ignorés non lus, recouvrement des paramètres et sorties contrôlé.
-- ROTMG pur et mise à jour d'état, mantisses/exposants séparés pour les produits
-  extrêmes, coefficients préservés pendant les redimensionnements répétés.
-- DSDOT/SDSDOT : produits élargis et accumulation ordonnée en Float64 ;
-  conversion finale Float32 pour SDSDOT, sans fast-math ni réassociation.
-- Tests par invariants en haute précision et BLAS indépendant ; défaut ROTMG
-  du Rust figé reproduit, fixtures et outil de reproduction conservés.
-- Benchmark des vecteurs contigus/inversés/non unitaires, génération par lots
-  variés, inspection LLVM/assembleur et archivage des hashes historiques.
+## 0.4.0 — modified rotations and extended dot products
 
-Le code numérique reste autonome. Les plages de résultats non représentables,
-la portée des références et les tâches restantes sont documentées.
+- **ROTM.** Float32/Float64, LLVM SIMD packets on contiguous outputs,
+  immutable parameters or BLAS vector, views/strides, ignored parameters never
+  read, controlled overlap of parameters and outputs.
+- **ROTMG.** Pure version and state update, separate mantissas/exponents for
+  extreme products, coefficients preserved across repeated rescalings.
+- **DSDOT/SDSDOT.** Widened products and ordered accumulation in Float64;
+  final Float32 conversion for SDSDOT, without fast-math or reassociation.
+- **Tests and benchmarks.** High-precision invariant tests and an independent
+  BLAS. Benchmarks on contiguous, reversed and non-unit-stride vectors, varied
+  batch generation, and LLVM/assembly inspection.
 
-# 0.3.0 — BLAS 3 structuré bloqué et stabilisation
+## 0.3.0 — blocked structured BLAS 3 and stabilization
 
-- Revalidation P0 de la v0.2 (11 574 tests), rapport spectral manquant ajouté,
-  archives des sources et journaux, CI Linux/macOS/Windows avec logs conservés.
-- SYMM/HEMM : empaquetage des triangles directement vers les panneaux GEMM,
-  sans expansion symétrique/hermitienne dense.
-- TRMM/TRSM : décomposition récursive, mises à jour GEMM, feuilles sur place,
-  panneaux dimensionnés pour les sous-problèmes ; résolution droite contiguë.
-- SYRK/SYR2K/HERK/HER2K : calcul des seules tuiles du triangle sélectionné,
-  tampon diagonal réutilisé et borné, diagonale hermitienne exactement réelle.
-- GEMMT : N/T/C indépendants, matrices rectangulaires, triangle opposé préservé.
-- Tests des quatre types, triangles ignorés, diagonale unité non lue, α/β/K sans
-  lecture, alias, vues, singularités avant mutation et workspaces partagés.
-- Benchmarks reproductibles contre la source v0.2 figée et BLAS externe ;
-  rapports, inventaire et hashes actualisés. Aucun backend numérique ajouté.
+- **Revalidation.** P0 revalidation of v0.2 (11,574 tests), and CI on
+  Linux/macOS/Windows with logs kept.
+- **SYMM/HEMM.** Triangles packed directly into the GEMM panels, without
+  dense symmetric/Hermitian expansion.
+- **TRMM/TRSM.** Recursive decomposition, GEMM updates, in-place leaves,
+  panels sized for the subproblems; contiguous right solve.
+- **SYRK/SYR2K/HERK/HER2K.** Only the tiles of the selected triangle are
+  computed; bounded reused diagonal buffer, exactly real Hermitian diagonal.
+- **GEMMT.** Independent N/T/C, rectangular matrices, opposite triangle
+  preserved.
+- **Tests.** The four types, ignored triangles, unit diagonal never read,
+  α/β/K without reads, aliasing, views, singularities detected before
+  mutation, shared workspaces.
 
-Les kernels x86 et la CI distante restent non exécutés localement. Les autres
-travaux P1/P2/P3 sont détaillés dans `docs/STATUS.md`.
+## 0.2.0 — native spectral decompositions
 
-# 0.2.0 — décompositions spectrales natives
+- **Hessenberg.** Real/complex compact Hessenberg reduction, implicit N/T/C
+  application of Q on the left and right, Q generated by compact WY and the
+  native GEMM. WY multiplications restricted to the useful regions, and the
+  panel workspace reused for the whole call.
+- **Schur.** Real Schur by Francis double shift and complex Schur by implicit
+  QR, with relative deflation, exceptional shifts and non-convergence reported.
+- **Symmetric/Hermitian eigenvalues.** Rank-2 tridiagonalization, explicit
+  phase correction and eigenvalues/eigenvectors by implicit QR; values-only
+  path.
+- **SVD.** Economy one-sided Jacobi SVD for the four types, wide matrices,
+  rank-deficient and values-only cases; scaled norms/correlations.
+- **Tests.** Invariants, LAPACK references, very large/small inputs,
+  subnormals, views and non-convergence.
 
-- Hessenberg compact réel/complexe, application implicite N/T/C de Q à gauche
-  et à droite, génération de Q par compact WY et GEMM natif.
-- Réduction des multiplications WY aux régions utiles et réutilisation du
-  workspace de panneaux pendant tout l’appel.
-- Schur réel par Francis double décalage et Schur complexe par QR implicite,
-  avec déflation relative, décalages exceptionnels et signalement de non-convergence.
-- Tridiagonalisation symétrique/hermitienne rang 2, correction explicite des
-  phases et valeurs/vecteurs propres par QR implicite ; voie valeurs seules.
-- SVD Jacobi unilatérale économique pour les quatre types, matrices larges,
-  rang déficient et valeurs seules ; normes/corrélations mises à l’échelle.
-- Tests d’invariants, références Rust/LAPACK, entrées très grandes/petites,
-  sous-normales, vues et non-convergence ; script de campagne spectrale fourni
-  (campagne complète non exécutée pour la v0.2).
+## 0.1.0 — initial increment
 
-Les variantes spectrales bloquées/avancées, les vecteurs propres généraux,
-le balancing et les autres fonctions énumérées dans `docs/STATUS.md` restent
-inachevés. Aucun backend numérique externe n’a été ajouté au paquet.
-
-# 0.1.0 — incrément initial
-
-- Paquet Julia autonome et interface explicite pour les quatre types BLAS usuels.
-- GEMM de référence, cache, panneaux, registres et vecteurs LLVM, avec sélection
-  de l’architecture et répartition native Julia en tâches de travail.
-- Buffers alignés réutilisables, garanties α/β, vues et gestion du recouvrement.
-- SIMD réel et complexe NEON validé sur Apple Silicon ; formes x86 implémentées
-  et en attente de validation matérielle.
-- Opérations BLAS denses et compactes, LU/Cholesky bloqués, QR Householder,
-  résolutions, raffinement LU mixte, lots GEMM, CSR/SpMV et CG/Jacobi.
-- Tests de conformité, références Rust figées, benchmarks, inspection LLVM et
-  assembleur, documentation des écarts et inventaire exhaustif de l’amont.
-
-Le portage de l’ensemble d’OxiBLAS reste incomplet. En particulier, Schur/EVD/SVD,
-les solveurs et formats creux avancés, les variantes tensorielles, la précision
-étendue, l’autotuning et l’ABI sont encore à réaliser. Voir `docs/STATUS.md`.
+- **Package and GEMM.**
+  - Standalone Julia package and explicit interface for the four usual BLAS
+    types.
+  - Reference, cache-blocked, panel, register and LLVM-vector GEMM, with
+    architecture selection and native Julia task distribution.
+  - Reusable aligned buffers, α/β guarantees, views and overlap handling.
+  - Real and complex NEON SIMD validated on Apple Silicon; x86 forms
+    implemented and awaiting hardware validation.
+- **Operations.** Dense and packed BLAS operations, blocked LU/Cholesky,
+  Householder QR, solves, mixed-precision LU refinement, GEMM batches,
+  CSR/SpMV and CG/Jacobi.
+- **Validation.** Conformance tests, benchmarks, LLVM and assembly
+  inspection, documentation of the deviations from upstream.

@@ -1,49 +1,42 @@
-# Algorithmes spectraux et itératifs
+# Spectral and iterative algorithms
 
-Les décompositions spectrales denses (Schur, hermitien, SVD, QZ) sont décrites
-dans [Factorisations denses](factorizations.md). Cette page couvre les méthodes
-itératives et partielles, utilisables sur des matrices denses ou creuses.
+The dense spectral decompositions (Schur, Hermitian, SVD, QZ) are described in
+[Dense factorizations](factorizations.md). This page covers the iterative and
+partial methods, usable on dense or sparse matrices.
 
 ```@example spec
 using OxiBLAS, SparseArrays, LinearAlgebra
 n = 200
-L = spdiagm(-1 => -ones(n-1), 0 => 2ones(n), 1 => -ones(n-1))   # laplacien 1D
+L = spdiagm(-1 => -ones(n-1), 0 => 2ones(n), 1 => -ones(n-1))   # 1-D Laplacian
 r = lobpcg(CSRMatrix(L); nev=3, which=:smallest)
 (r.converged, r.values)
 ```
 
-## Valeurs propres
+## Eigenvalues
 
-| Fonction | Méthode |
+| Function | Method |
 |---|---|
-| `lanczos(A; nev, which)`, `thick_restart_lanczos` | Lanczos hermitien, redémarrage épais |
-| `arnoldi`, `iram`, `thick_restart_arnoldi` | Arnoldi, redémarrage implicite ou épais |
-| `block_lanczos`, `block_arnoldi` (et `*_factor`) | variantes par blocs |
-| `lobpcg(A; nev, B, which)` | LOBPCG, problème généralisé possible |
-| `shift_invert` | transformation spectrale |
-| `polynomial_filter`, `apply_filter!`, `filter_response` | filtres de Chebyshev (`ChebyshevFilter`, `FilterWorkspace`) |
-| `eigenvalues_in_interval`, `count_eigenvalues_in_interval`, `polynomial_filtered_eigenvalues`, `hermitian_spectral_bounds` | recherche par intervalle |
+| `lanczos(A; nev, which)`, `thick_restart_lanczos` | Hermitian Lanczos, thick restart |
+| `arnoldi`, `iram`, `thick_restart_arnoldi` | Arnoldi, implicit or thick restart |
+| `block_lanczos`, `block_arnoldi` (and `*_factor`) | block variants |
+| `lobpcg(A; nev, B, which)` | LOBPCG, generalized problems possible |
+| `shift_invert` | spectral transformation |
+| `polynomial_filter`, `apply_filter!`, `filter_response` | Chebyshev filters (`ChebyshevFilter`, `FilterWorkspace`) |
+| `eigenvalues_in_interval`, `count_eigenvalues_in_interval`, `polynomial_filtered_eigenvalues`, `hermitian_spectral_bounds` | interval search |
 
-## Valeurs singulières
+## Singular values
 
-| Fonction | Méthode |
+| Function | Method |
 |---|---|
-| `sparse_svd_lanczos`, `sparse_svd` | SVD partielle creuse (Golub–Kahan par défaut), `SparseSVDWorkspace` |
-| `svd_selected(A; indices, interval)`, `svd_truncated`, `svd_randomized` | SVD partielles denses |
-| `incremental_svd`, `svd_add_rows!`, `svd_add_columns!`, `svd_snapshot`, `svd_rank` | SVD mise à jour par lignes ou colonnes (`IncrementalSVDFactor`) |
+| `sparse_svd_lanczos`, `sparse_svd` | partial sparse SVD (Golub–Kahan by default), `SparseSVDWorkspace` |
+| `svd_selected(A; indices, interval)`, `svd_truncated`, `svd_randomized` | partial dense SVDs |
+| `incremental_svd`, `svd_add_rows!`, `svd_add_columns!`, `svd_snapshot`, `svd_rank` | SVD updated by rows or columns (`IncrementalSVDFactor`) |
 
-## Estimations stochastiques
+## Stochastic estimators
 
-`trace_hutchinson`, `trace_hutch_plus_plus`, `trace_xtrace` et
-`trace_xtrace_loo` estiment la trace. `stochastic_diagonal`,
-`stochastic_frobenius` et `stochastic_logdet` estiment respectivement la
-diagonale, la norme de Frobenius et le log-déterminant. Tous sont configurés
-par `StochasticConfig(; num_probes, seed, ...)`, avec une graine explicite et
-sans état global.
-
-Conception historique : [LOT_SPECTRAL_BLOCS](../dev/LOT_SPECTRAL_BLOCS.md),
-[LOT_ARNOLDI_XTRACE](../dev/LOT_ARNOLDI_XTRACE.md),
-[LOT_FILTRES_INTERVALLES](../dev/LOT_FILTRES_INTERVALLES.md),
-[LOT_SVD_PARTIELLE](../dev/LOT_SVD_PARTIELLE.md),
-[LOT_SVD_INCREMENTALE](../dev/LOT_SVD_INCREMENTALE.md) et
-[LOT_STOCHASTIQUE_TENSEURS](../dev/LOT_STOCHASTIQUE_TENSEURS.md).
+`trace_hutchinson`, `trace_hutch_plus_plus`, `trace_xtrace` and
+`trace_xtrace_loo` estimate the trace. `stochastic_diagonal`,
+`stochastic_frobenius` and `stochastic_logdet` estimate the diagonal, the
+Frobenius norm and the log-determinant. All are configured by
+`StochasticConfig(; num_probes, seed, ...)`, with an explicit seed and no
+global state.
