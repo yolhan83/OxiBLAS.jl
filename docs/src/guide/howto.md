@@ -44,11 +44,16 @@ indefinite ones. `OxiBLAS.factorize(M)` chooses from the structure.
 x = A \ b                           # multifrontal LU or Cholesky, chosen from the structure
 F = OxiBLAS.factorize(A)            # reuse: Cholesky here (symmetric positive definite)
 x2 = OxiBLAS.ldiv(F, b)
-norm(L * x2 - b) / norm(b)
+y = similar(b); OxiBLAS.ldiv!(y, F, b)   # in-place solve (0 allocations for Cholesky)
+norm(L * y - b) / norm(b)
 ```
 
 The engines are [`multifrontal_lu`](@ref), [`multifrontal_cholesky`](@ref),
 [`sparse_ldlt`](@ref) (indefinite) and [`sparse_qr`](@ref) (least squares).
+For in-place solves (`OxiBLAS.ldiv!(Y, F, B)` or `LinearAlgebra.ldiv!(F, B)`),
+`Cholesky` reuses its internal supernodal buffer under its lock (0 allocations)
+and `LU` / `LDLt` / `BunchKaufman` / `QRSparse` solve in place with a single
+column-sized working vector.
 
 ### Iteratively (Krylov methods)
 
@@ -102,12 +107,18 @@ r = block_cg(A, B; rtol=1e-8)
 
 ```@example howto
 Tall = randn(300, 40); d = randn(300)
-x = OxiBLAS.qr(Tall) \ d                     # or OxiBLAS.ldiv(Tall, d)
-norm(Tall' * (Tall * x - d))                 # normal equations satisfied
+F_qr = OxiBLAS.qr(Tall)
+x = F_qr \ d                                 # or OxiBLAS.ldiv(Tall, d)
+y = zeros(40); ws = zeros(300)               # 300-row workspace reused across solves
+OxiBLAS.ldiv!(y, F_qr, d; workspace=ws)      # in-place least squares (0 allocations)
+norm(Tall' * (Tall * y - d))                 # normal equations satisfied
 ```
 
 Rank-deficient problems: [`qr_pivoted`](@ref) or [`complete_orthogonal`](@ref)
-(minimum-norm solution). Sparse: [`sparse_qr`](@ref) then [`solve`](@ref).
+(minimum-norm solution). Underdetermined (wide) minimum-norm problems:
+`OxiBLAS.lq(Wide)` or `OxiBLAS.svd(Wide)`, where `OxiBLAS.ldiv!(y, F, b)`
+solves directly into `y` without needing a `workspace`. Sparse:
+`OxiBLAS.qr(A_sparse)` (or [`sparse_qr`](@ref) then [`solve`](@ref)).
 
 ### Check a solution
 

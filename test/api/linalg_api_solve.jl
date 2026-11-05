@@ -156,6 +156,10 @@ end
     @test OBS.factorize(H) isa OBS.Cholesky; @test OBS.ldiv(H,B) ≈ Matrix(H)\B rtol=r
     Ft=randn(rng,T,3n,n); c=randn(rng,T,3n)        # tall: least squares
     @test OBS.ldiv(Ft,c) ≈ Ft\c rtol=10r
+    Fqr=OBS.qr(Ft); yqr=zeros(T,n); ws=zeros(T,3n)
+    @test OBS.ldiv!(yqr,Fqr,c;workspace=ws)===yqr; @test yqr ≈ Ft\c rtol=10r
+    @test_throws DimensionMismatch OBS.ldiv!(yqr,Fqr,c;workspace=zeros(T,3n-1))
+    @test_throws ArgumentError OBS.ldiv!(yqr,Fqr,c;workspace=c)
     Fw=randn(rng,T,n,3n)                             # wide: a solution of A*x = b
     x=OBS.ldiv(Fw,b); @test Fw*x ≈ b rtol=10r; @test length(x)==3n
     for M in (LA.Diagonal(randn(rng,T,n).+3),LA.Tridiagonal(randn(rng,T,n-1),randn(rng,T,n).+4,randn(rng,T,n-1)),

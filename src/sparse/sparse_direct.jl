@@ -133,17 +133,21 @@ SparseLUFactor(L::CSRMatrix{T,Int},U::CSRMatrix{T,Int},p::Vector{Int},drop_toler
     SparseLUFactor{T,R}(L,U,p,collect(1:length(p)),drop_tolerance)
 # Real scalar parameters are carried separately to keep field types concrete.
 function _rows_to_csr(rows,::Type{T},n) where T
-    ptr=Int[1]; cols=Int[]; values=T[]
-    for row in rows
-        for j in sort!(collect(keys(row)))
-            value=row[j]
-            if !iszero(value)
-                push!(cols,j); push!(values,value)
-            end
+    m=length(rows)
+    ptr=Vector{Int}(undef,m+1); ptr[1]=1
+    cols=Int[]; values=T[]; rowcols=Int[]
+    for (i,row) in enumerate(rows)
+        empty!(rowcols)
+        for (j,value) in row
+            !iszero(value) && push!(rowcols,j)
         end
-        push!(ptr,length(values)+1)
+        sort!(rowcols)
+        for j in rowcols
+            push!(cols,j); push!(values,row[j])
+        end
+        ptr[i+1]=length(values)+1
     end
-    CSRMatrix(length(rows),n,ptr,cols,values)
+    CSRMatrix(m,n,ptr,cols,values)
 end
 """Sparse LU with threshold partial row pivoting, A[p,q] = L·U.
 
@@ -248,26 +252,26 @@ function solve(F::SparseLUFactor,b::AbstractVecOrMat)
 end
 function _precondition!(z,r,F::SparseLUFactor)
     n=length(z); length(r)==n==length(F.p) || throw(DimensionMismatch("sparse LU preconditioner dimensions differ"))
-    for i in 1:n
-        z[i]=r[F.p[i]]
+    rr=Base.mightalias(z,r) ? copy(r) : r; q=F.q
+    # Solve in the column-permuted positions z[q[i]] directly so no temporary
+    # copy(z) is allocated when q != 1:n and no mutable workspace is shared.
+    @inbounds for i in 1:n
+        z[q[i]]=rr[F.p[i]]
     end
-    for i in 1:n, p in F.L.rowptr[i]:F.L.rowptr[i+1]-1
-        j=F.L.colind[p]; j<i && (z[i]-=F.L.values[p]*z[j])
+    @inbounds for i in 1:n
+        qi=q[i]; zi=z[qi]
+        for p in F.L.rowptr[i]:F.L.rowptr[i+1]-1
+            j=F.L.colind[p]; j<i && (zi-=F.L.values[p]*z[q[j]])
+        end
+        z[qi]=zi
     end
-    for i in n:-1:1
-        diagonal=zero(eltype(z))
+    @inbounds for i in n:-1:1
+        qi=q[i]; zi=z[qi]; diagonal=zero(eltype(z))
         for p in F.U.rowptr[i]:F.U.rowptr[i+1]-1
             j=F.U.colind[p]
-            j>i ? (z[i]-=F.U.values[p]*z[j]) : j==i && (diagonal=F.U.values[p])
+            j>i ? (zi-=F.U.values[p]*z[q[j]]) : j==i && (diagonal=F.U.values[p])
         end
-        z[i]/=diagonal
-    end
-    # Back to the column order: z[q] = solution.
-    if F.q!=1:n
-        y=copy(z)
-        for i in 1:n
-            z[F.q[i]]=y[i]
-        end
+        z[qi]=zi/diagonal
     end
     z
 end

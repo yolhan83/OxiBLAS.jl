@@ -79,7 +79,7 @@ function block_gmres(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B
     _within(residuals,targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
     # Krylov bases, Hessenberg matrix and n×s work blocks sized once for the
     # longest cycle and reused by every restart.
-    qmax=min(restart,maxiter); Vbuf=zeros(T,n,(qmax+1)*s); Zbuf=zeros(T,n,qmax*s); Hbuf=zeros(T,(qmax+1)*s,qmax*s)
+    qmax=min(restart,maxiter); Vbuf=zeros(T,n,(qmax+1)*s); Zbuf=zeros(T,n,qmax*s); Hbuf=zeros(T,(qmax+1)*s,qmax*s); rightbuf=zeros(T,(qmax+1)*s,s)
     W=similar(B); hij=similar(B,s,s); base=similar(X); trial=similar(X)
     while iterations<maxiter
         if n<s || !_block_full_rank(R)
@@ -88,7 +88,11 @@ function block_gmres(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B
         q=min(restart,maxiter-iterations)
         V=view(Vbuf,:,1:(q+1)*s); Z=view(Zbuf,:,1:q*s); H=view(Hbuf,1:(q+1)*s,1:q*s)
         fill!(V,zero(T)); fill!(Z,zero(T)); fill!(H,zero(T))
-        F=qr_factor(R;threaded=false); V[:,1:s]=qr_q(F;columns=s,threaded=false); S=F.R[1:s,:]; copyto!(base,X); copyto!(trial,X)
+        F=qr_factor(R;threaded=false); V[:,1:s]=qr_q(F;columns=s,threaded=false)
+        @inbounds for j in 1:s, i in 1:s
+            rightbuf[i,j]=i<=j ? F.factors[i,j] : zero(T)
+        end
+        copyto!(base,X); copyto!(trial,X)
         for j in 1:q
             current=(j-1)*s+1:j*s; following=j*s+1:(j+1)*s
             for (k,col) in enumerate(current)
@@ -103,9 +107,11 @@ function block_gmres(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B
                 gemm!(W,view(V,:,rows),hij,-one(T),one(T))
             end
             fullrank=n>=(j+1)*s && _block_full_rank(W); factor=qr_factor(W;threaded=false)
-            H[following,current]=factor.R[1:s,:]
+            @inbounds for c in 1:s, r in 1:s
+                H[following[r],current[c]]=r<=c ? factor.factors[r,c] : zero(T)
+            end
             fullrank && (V[:,following]=qr_q(factor;columns=s,threaded=false))
-            right=zeros(T,(j+1)*s,s); right[1:s,:]=S
+            right=view(rightbuf,1:(j+1)*s,1:s)
             projected=complete_orthogonal(view(H,1:(j+1)*s,1:j*s);threaded=false)
             coefficients=solve(projected,right); copyto!(trial,base); gemm!(trial,view(Z,:,1:j*s),coefficients,one(T),one(T))
             _block_residual!(residuals,R,A,trial,B,product); iterations+=1

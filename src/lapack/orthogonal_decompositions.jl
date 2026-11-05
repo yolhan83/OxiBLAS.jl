@@ -153,12 +153,10 @@ function _apply_q_unblocked!(B,ff,left,forward,threaded,parallel_threshold)
     workers=_operation_workers(rhs,Float64(m)*q*rhs,threaded,parallel_threshold)
     _foreach_range(rhs,workers) do range,_
         out=left ? view(B,:,range) : view(B,range,:)
-        v=Vector{T}(undef,m); work=Vector{T}(undef,size(out,1))
-        for j in (forward ? (1:q) : (q:-1:1))
-            tau=ff.tau[j]
-            if left && T<:NativeFloat && out isa StridedMatrix && ff.factors isa StridedMatrix
-                # Contiguous columns: SIMD Level 1 dot/axpy as in the QR panel.
-                iszero(tau) && continue
+        if left && T<:NativeFloat && out isa StridedMatrix && ff.factors isa StridedMatrix
+            # Contiguous columns: SIMD Level 1 dot/axpy as in the QR panel.
+            for j in (forward ? (1:q) : (q:-1:1))
+                tau=ff.tau[j]; iszero(tau) && continue
                 vj=view(ff.factors,j+1:m,j)
                 @inbounds for col in axes(out,2)
                     c=view(out,j+1:m,col)
@@ -166,13 +164,17 @@ function _apply_q_unblocked!(B,ff,left,forward,threaded,parallel_threshold)
                     out[j,col]-=s
                     axpy!(c,vj,-s)
                 end
-                continue
             end
-            vv=view(v,1:m-j+1); vv[1]=one(T)
-            for i in j+1:m
-                vv[i-j+1]=ff.factors[i,j]
+        else
+            v=Vector{T}(undef,m); work=Vector{T}(undef,size(out,1))
+            for j in (forward ? (1:q) : (q:-1:1))
+                tau=ff.tau[j]
+                vv=view(v,1:m-j+1); vv[1]=one(T)
+                for i in j+1:m
+                    vv[i-j+1]=ff.factors[i,j]
+                end
+                left ? _reflect_left!(out,vv,tau,j,axes(out,2)) : _reflect_right!(out,vv,tau,j,axes(out,1),work)
             end
-            left ? _reflect_left!(out,vv,tau,j,axes(out,2)) : _reflect_right!(out,vv,tau,j,axes(out,1),work)
         end
     end
     B

@@ -26,18 +26,6 @@ function _sp_kind(A::_SpIn)
     throw(ArgumentError("matrix is neither symmetric nor Hermitian"))
 end
 
-function _csc_diagonal(L::CSCMatrix{T}) where T
-    d=Vector{T}(undef,size(L,2))
-    @inbounds for j in axes(L,2)
-        v=zero(T)
-        for q in L.colptr[j]:L.colptr[j+1]-1
-            L.rowind[q]==j && (v=L.values[q]; break)
-        end
-        d[j]=v
-    end
-    d
-end
-
 # ==== LU ========================================================================
 LU(E::MultifrontalLUFactor{T}) where T=LU{T,typeof(E)}(E)
 Base.size(F::LU{<:Any,<:MultifrontalLUFactor})=(n=length(_eng(F).p);(n,n))
@@ -46,7 +34,7 @@ for (W,tr) in ((:LU,:(:N)),(:_AdjF,:(:C)),(:_TrF,:(:T)))
     S=W===:LU ? :(LU{T,<:MultifrontalLUFactor}) : :($W{<:Any,<:LU{T,<:MultifrontalLUFactor}})
     @eval function _LA.ldiv!(Fw::$S,B::AbstractVecOrMat) where T
         E=_eng($(W===:LU ? :Fw : :(parent(Fw)))); _check_rows(Fw,B)
-        _apply_split!(X->copyto!(X,solve(E,X;trans=$tr)),T,B)
+        _apply_split!(X->_lu_ldiv!(E,X;trans=$tr),T,B)
     end
 end
 _LA.logabsdet(F::LU{<:Any,<:MultifrontalLUFactor})=logabsdet_factor(_eng(F))
@@ -88,11 +76,17 @@ Cholesky(E::MultifrontalCholeskyFactor{T},info::Integer=0) where T=Cholesky{T,ty
 Base.size(F::Cholesky{<:Any,<:MultifrontalCholeskyFactor})=(n=length(_eng(F).p);(n,n))
 function _LA.ldiv!(F::Cholesky{T,<:MultifrontalCholeskyFactor},B::AbstractVecOrMat) where T
     E=_chol_ready(F); _check_rows(F,B)
-    _apply_split!(X->copyto!(X,solve(E,X)),T,B)
+    _apply_split!(X->_chol_ldiv!(E,X),T,B)
 end
 function _LA.logabsdet(F::Cholesky{T,<:MultifrontalCholeskyFactor}) where T
-    d=zero(real(T))
-    for x in _csc_diagonal(_chol_ready(F).L); d+=log(real(x)); end
+    L=_chol_ready(F).L; d=zero(real(T))
+    @inbounds for j in axes(L,2)
+        v=zero(T)
+        for q in L.colptr[j]:L.colptr[j+1]-1
+            L.rowind[q]==j && (v=L.values[q]; break)
+        end
+        d+=log(real(v))
+    end
     (2d,one(T))
 end
 function Base.getproperty(F::Cholesky{<:Any,<:MultifrontalCholeskyFactor},s::Symbol)
@@ -113,13 +107,16 @@ function _sp_chol_operand(A)
     (_sparse_input(A),:L)
 end
 """
-    OxiBLAS.cholesky(A::sparse; check=true, perm=nothing) -> OxiBLAS.Cholesky
+    OxiBLAS.cholesky(A::sparse; check=true, perm=nothing, shift=0) -> OxiBLAS.Cholesky
 
 Supernodal multifrontal Cholesky factorization (`multifrontal_cholesky`) with
-an AMD ordering, or the permutation `perm`; `A[p,p] = L·Lᴴ`.
+an AMD ordering, or the user-supplied permutation vector `perm`; factors
+`(A + shift*I)[p,p] = L·Lᴴ` (like CHOLMOD's `perm` and `shift` keywords).
 
 - Accepts a `Hermitian` or real `Symmetric` wrapper (the triangle named by
   its `uplo`), or a plain matrix, which is checked for being Hermitian.
+- `perm`: custom fill-reducing permutation vector of `1:n` (`nothing` uses AMD).
+- `shift`: real diagonal shift `σ` added to `A` before factoring (`A + σI`).
 - A matrix that is not positive definite throws `PosDefException` whatever
   the value of `check`: the engine has no failure state to return.
 """
@@ -136,11 +133,11 @@ function cholesky(A::Union{_SpIn,_SpHerm};check::Bool=true,perm::Union{Nothing,A
 end
 cholesky(A::_SpAT;kw...)=cholesky(copy(A);kw...)
 """
-    OxiBLAS.cholesky!(F::OxiBLAS.Cholesky, A) -> F
+    OxiBLAS.cholesky!(F::OxiBLAS.Cholesky, A; check=true, shift=0) -> F
 
-Refactorizes `A`, which has the same pattern, into `F`. The ordering `F.p` is
-reused, so the AMD step is skipped; the rest of the symbolic analysis is
-redone.
+Refactorizes `A + shift*I`, which has the same pattern, into `F`. The ordering
+`F.p` is reused, so the AMD step is skipped; the rest of the symbolic analysis
+is redone.
 """
 function cholesky!(F::Cholesky{T,<:MultifrontalCholeskyFactor},A::Union{_SpIn,_SpHerm};check::Bool=true,shift::Number=0) where T
     size(A)==size(F) || throw(DimensionMismatch("new matrix has size $(size(A)), factorization has size $(size(F))"))
@@ -149,7 +146,6 @@ function cholesky!(F::Cholesky{T,<:MultifrontalCholeskyFactor},A::Union{_SpIn,_S
 end
 
 # ==== LDLᵀ and Bunch–Kaufman ====================================================
-_engine_solve(E::SparseLDLFactor,X)=solve(E,X)
 _LA.logabsdet(F::Union{BunchKaufman{<:Any,<:SparseLDLFactor},LDLt{<:Any,<:SparseLDLFactor}})=logabsdet_factor(_eng(F))
 function _sp_ldl_tridiagonal(E::SparseLDLFactor{T}) where T
     n=length(E.diagonal); dl=zeros(T,max(n-1,0)); du=zeros(T,max(n-1,0)); k=1
@@ -179,26 +175,29 @@ function _sp_ldl(A,pivot,perm,shift::Number=0)
 end
 const _SpSym=Union{_SpIn,_LA.Hermitian{<:Any,<:_SpIn},_LA.Symmetric{<:Any,<:_SpIn}}
 """
-    OxiBLAS.ldlt(A::sparse; perm=nothing) -> OxiBLAS.LDLt
+    OxiBLAS.ldlt(A::sparse; perm=nothing, shift=0) -> OxiBLAS.LDLt
 
 Multifrontal LDLᵀ factorization without pivoting (`sparse_ldlt`,
-`pivot=:none`), with an AMD ordering or the permutation `perm`, as in
-CHOLMOD's `ldlt`.
+`pivot=:none`), with an AMD ordering or the permutation `perm` and optional
+diagonal shift `shift` (`A + shift*I`), as in CHOLMOD's `ldlt`.
 """
 ldlt(A::_SpSym;perm::Union{Nothing,AbstractVector{<:Integer}}=nothing,shift::Number=0)=LDLt(_sp_ldl(A,:none,perm,shift))
 """
-    OxiBLAS.bunchkaufman(A::sparse; perm=nothing) -> OxiBLAS.BunchKaufman
+    OxiBLAS.bunchkaufman(A::sparse, rook=false; check=true, perm=nothing) -> OxiBLAS.BunchKaufman
 
-Multifrontal LDLᵀ factorization with Bunch–Kaufman pivoting inside the
-fronts and the MA57 threshold (`sparse_ldlt`).
+Multifrontal LDLᵀ factorization with 1×1 and 2×2 Bunch–Kaufman pivoting inside
+the fronts and the MA57 threshold (`sparse_ldlt`). `perm` supplies a custom
+fill-reducing permutation vector (`nothing` uses AMD). Only `rook=false` is
+supported.
 """
 bunchkaufman(A::_SpSym,rook::Bool=false;check::Bool=true,perm::Union{Nothing,AbstractVector{<:Integer}}=nothing)=
     (rook && throw(ArgumentError("rook pivoting is not available; use rook=false")); BunchKaufman(_sp_ldl(A,:bunchkaufman,perm)))
 """
-    OxiBLAS.ldlt!(F, A) -> F
+    OxiBLAS.ldlt!(F, A; shift=0) -> F
+    OxiBLAS.bunchkaufman!(F, A) -> F
 
-Refactorizes `A`, which has the same pattern, into `F`, reusing the ordering
-`F.p`.
+Refactorizes `A` (or `A + shift*I` for `ldlt!`), which has the same pattern,
+into `F`, reusing the ordering `F.p`.
 """
 function ldlt!(F::LDLt{T,<:SparseLDLFactor},A::_SpSym;shift::Number=0) where T
     size(A)==size(F) || throw(DimensionMismatch("new matrix has size $(size(A)), factorization has size $(size(F))"))
@@ -219,9 +218,7 @@ _LA.issuccess(::QRSparse)=true
 function _LA.ldiv!(F::QRSparse{T},B::AbstractVecOrMat) where T
     m,n=size(F); _check_rows(F,B,_ldiv_rows(F))
     m>=n || throw(ArgumentError("sparse QR solve requires m ≥ n (got $m×$n); the underdetermined solve is not available"))
-    _apply_split!(T,B) do X
-        Y=_asmatrix(X); copyto!(view(Y,1:n,:),solve(_eng(F),Y[1:m,:]))
-    end
+    _apply_split!(X->_qr_solve!(_eng(F),view(_asmatrix(X),1:m,:)),T,B)
 end
 """
     OxiBLAS.SparseQRQ{T,E} <: LinearAlgebra.AbstractQ{T}

@@ -52,16 +52,25 @@ function _precondition!(z,r,F::MultifrontalCholeskyFactor)
         z
     end
 end
-function solve(F::MultifrontalCholeskyFactor{T},b::AbstractVecOrMat{T}) where T
-    size(b,1)==length(F.p) || throw(DimensionMismatch("multifrontal solve dimensions differ"))
-    if ndims(b)==1
-        return _precondition!(similar(b),b,F)
-    end
-    X=similar(b)
-    for j in axes(b,2)
-        _precondition!(view(X,:,j),view(b,:,j),F)
+function _chol_ldiv!(F::MultifrontalCholeskyFactor,X::AbstractVecOrMat)
+    n=length(F.p); size(X,1)==n || throw(DimensionMismatch("multifrontal solve dimensions differ"))
+    lock(F.guard) do
+        x=view(F.work,1:n); y=view(F.work,n+1:2n)
+        for j in axes(X,2)
+            @inbounds for i in 1:n
+                x[i]=X[F.p[i],j]
+            end
+            _chol_solve!(x,y,F.L,F.nodes)
+            @inbounds for i in 1:n
+                X[F.p[i],j]=x[i]
+            end
+        end
     end
     X
+end
+function solve(F::MultifrontalCholeskyFactor{T},b::AbstractVecOrMat{T}) where T
+    size(b,1)==length(F.p) || throw(DimensionMismatch("multifrontal solve dimensions differ"))
+    _chol_ldiv!(F,copy(b))
 end
 _check_preconditioner(F::MultifrontalCholeskyFactor,n)=length(F.p)==n ? nothing : throw(DimensionMismatch("preconditioner dimensions differ"))
 

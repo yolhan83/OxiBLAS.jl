@@ -183,6 +183,21 @@ function multifrontal_lu(A::NativeSparse;ordering=:auto,maxwidth::Union{Nothing,
     MultifrontalLUFactor(_rows_to_csr(lrows,T,n),_rows_to_csr(upper,T,n),p,q,tree.parents,tree.nodes,shapes,
                          R(pivot_threshold),iszero(initial) ? one(R) : maximum(growth;init=initial)/initial)
 end
+function _lu_ldiv!(F::MultifrontalLUFactor{T},X::AbstractVecOrMat{T};trans=:N) where T
+    _trans_kind(trans)==0 || return _sparse_lu_ldiv!(F.L,F.U,F.p,F.q,X;trans)
+    n=length(F.p); Base.require_one_based_indexing(X); size(X,1)==n || throw(DimensionMismatch("sparse LU RHS differs"))
+    w=Vector{T}(undef,n)
+    for j in axes(X,2)
+        @inbounds for i in 1:n
+            w[i]=X[F.p[i],j]
+        end
+        _lu_csr_solve!(w,F.L,F.U)
+        @inbounds for i in 1:n
+            X[F.q[i],j]=w[i]
+        end
+    end
+    X
+end
 function solve(F::MultifrontalLUFactor{T},b::AbstractVecOrMat{T};trans=:N) where T
     _trans_kind(trans)==0 || return _sparse_lu_solve(F.L,F.U,F.p,F.q,b;trans)
     n=length(F.p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LU RHS differs"))

@@ -371,13 +371,9 @@ _LA.issuccess(F::_LDLTypes)=true   # the engines throw on breakdown
 _selfadjoint(F::_LDLTypes)=eltype(F)<:Real || _eng(F).hermitian
 _selftranspose(F::_LDLTypes)=eltype(F)<:Real || !_eng(F).hermitian
 
-# Solves through the engine's own (allocating) solve, written back.
-_engine_solve(E::LDLFactor,X)=solve(E,X)
 function _LA.ldiv!(F::_LDLTypes,B::AbstractVecOrMat)
     E=_eng(F); _check_rows(F,B)
-    _apply_split!(eltype(F),B) do X
-        E isa LDLFactor ? _ldl_solve!(E,X) : copyto!(X,_engine_solve(E,X))
-    end
+    _apply_split!(X->_ldl_solve!(E,X),eltype(F),B)
 end
 function _LA.logabsdet(F::Union{BunchKaufman{T,<:LDLFactor},LDLt{T,<:LDLFactor}}) where T
     E=_eng(F); D=E.D; d=zero(real(T)); s=one(T); k=1
@@ -502,13 +498,13 @@ _LA.issuccess(::Union{QR,QRPivoted,LQ})=true
 #   - r < n: minimum-norm solution of [R₁₁ R₁₂]·z = (Qᴴb)[1:r], through the
 #     QR factorization of the r×n trapezoid, as LinearAlgebra does for wide QR.
 function _qr_ls!(E::QRFactor,B::AbstractMatrix,r::Int)
-    a=E.factors; m,n=size(a)
+    a=E.factors; m,n=size(a); vec1=size(B,2)==1
     apply_q!(view(B,1:m,:),E;trans=:C)
     if r==n
-        trsm!(view(B,1:n,:),view(a,1:n,1:n);uplo=:U)
+        _trisolve!(vec1 ? view(B,1:n,1) : view(B,1:n,:),view(a,1:n,1:n),:U,:N,false)
     else
         G=qr_factor(adjoint(_triu_rows(a,r)))
-        trsm!(view(B,1:r,:),view(G.factors,1:r,1:r);uplo=:U,trans=:C)
+        _trisolve!(vec1 ? view(B,1:r,1) : view(B,1:r,:),view(G.factors,1:r,1:r),:U,:C,false)
         fill!(view(B,r+1:n,:),zero(eltype(B)))
         apply_q!(view(B,1:n,:),G)
     end
@@ -518,15 +514,15 @@ end
 #   - m ≥ n: minimum norm, x = Q·[R⁻ᴴb; 0].
 #   - m < n: least squares through the QR factorization of Rᴴ.
 function _qr_adj_ls!(E::QRFactor,B::AbstractMatrix)
-    a=E.factors; m,n=size(a)
+    a=E.factors; m,n=size(a); vec1=size(B,2)==1
     if m>=n
-        trsm!(view(B,1:n,:),view(a,1:n,1:n);uplo=:U,trans=:C)
+        _trisolve!(vec1 ? view(B,1:n,1) : view(B,1:n,:),view(a,1:n,1:n),:U,:C,false)
         fill!(view(B,n+1:m,:),zero(eltype(B)))
         apply_q!(view(B,1:m,:),E)
     else
         G=qr_factor(adjoint(_triu_rows(a,m)))
         apply_q!(view(B,1:n,:),G;trans=:C)
-        trsm!(view(B,1:m,:),view(G.factors,1:m,1:m);uplo=:U)
+        _trisolve!(vec1 ? view(B,1:m,1) : view(B,1:m,:),view(G.factors,1:m,1:m),:U,:N,false)
         apply_q!(view(B,1:m,:),E)
     end
     B
@@ -576,10 +572,16 @@ function _rect_backslash(F,B::AbstractVecOrMat)
     m,n=size(F)
     size(B,1)==m || throw(DimensionMismatch("factorization has $m rows, right-hand side has $(size(B,1))"))
     S=typeof(zero(eltype(B))/oneunit(eltype(F)))
-    X=B isa AbstractVector ? zeros(S,max(m,n)) : zeros(S,max(m,n),size(B,2))
-    B isa AbstractVector ? copyto!(view(X,1:m),B) : copyto!(view(X,1:m,:),B)
+    if B isa AbstractVector
+        X=m>n ? Vector{S}(undef,m) : zeros(S,max(m,n))
+        copyto!(view(X,1:m),B)
+        _LA.ldiv!(F,X)
+        return m>n ? resize!(X,n) : X
+    end
+    X=m>n ? Matrix{S}(undef,m,size(B,2)) : zeros(S,max(m,n),size(B,2))
+    copyto!(view(X,1:m,:),B)
     _LA.ldiv!(F,X)
-    B isa AbstractVector ? X[1:n] : X[1:n,:]
+    m==n ? X : X[1:n,:]
 end
 const _RectFact=Union{QR,QRPivoted,LQ,QRSparse,_AdjF{<:Any,<:QR},_AdjF{<:Any,<:LQ}}
 Base.:\(F::_RectFact,B::AbstractVecOrMat)=_rect_backslash(F,B)
@@ -707,14 +709,26 @@ end
 SVD(E::SVDFactor{T,R}) where {T,R}=SVD{T,R,typeof(E)}(E)
 Base.size(F::SVD)=(size(_eng(F).U,1),size(_eng(F).Vt,2))
 _LA.issuccess(::SVD)=true
+function _svd_solve!(Y::AbstractVecOrMat{T},E::SVDFactor{T,Tr},B::AbstractVecOrMat{T}) where {T,Tr}
+    S=E.S; k=isempty(S) ? 0 : count(s->s>eps(Tr)*S[1],S)
+    if Y isa AbstractVector && B isa AbstractVector
+        W=Vector{T}(undef,k)
+        gemv!(W,view(E.U,:,1:k),B;trans=:C)
+        @inbounds for i in 1:k; W[i]/=S[i]; end
+        gemv!(Y,view(E.Vt,1:k,:),W;trans=:C)
+    else
+        Ym=_asmatrix(Y); Bm=_asmatrix(B)
+        W=Matrix{T}(undef,k,size(Ym,2))
+        gemm!(W,adjoint(view(E.U,:,1:k)),Bm)
+        @inbounds for j in axes(W,2), i in 1:k; W[i,j]/=S[i]; end
+        gemm!(Ym,adjoint(view(E.Vt,1:k,:)),W)
+    end
+    Y
+end
 function _LA.ldiv!(F::SVD{T,Tr},B::AbstractVecOrMat) where {T,Tr}
-    _check_rows(F,B,_ldiv_rows(F)); E=_eng(F); m,n=size(F); S=E.S
-    k=isempty(S) ? 0 : count(s->s>eps(Tr)*S[1],S)
+    _check_rows(F,B,_ldiv_rows(F)); E=_eng(F); m,n=size(F)
     _apply_split!(T,B) do X
-        Y=_asmatrix(X); W=Matrix{T}(undef,k,size(Y,2))
-        gemm!(W,adjoint(view(E.U,:,1:k)),view(Y,1:m,:))
-        for j in axes(W,2), i in 1:k; W[i,j]/=S[i]; end
-        gemm!(view(Y,1:n,:),adjoint(view(E.Vt,1:k,:)),W)
+        X isa AbstractVector ? _svd_solve!(view(X,1:n),E,view(X,1:m)) : _svd_solve!(view(X,1:n,:),E,view(X,1:m,:))
     end
 end
 Base.:\(F::SVD,B::AbstractVecOrMat)=_rect_backslash(F,B)

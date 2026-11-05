@@ -69,34 +69,40 @@ function _ldl_backward!(x,L::CSCMatrix,hermitian)
     end
     x
 end
-function solve(F::SparseLDLFactor{T},b::AbstractVecOrMat{T};trans=:N,threaded=true) where T
-    n=length(F.p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LDL RHS differs"))
+function _ldl_solve!(F::SparseLDLFactor{T},B::AbstractVecOrMat{T};trans=:N,threaded=true) where T
+    n=length(F.p); Base.require_one_based_indexing(B); size(B,1)==n || throw(DimensionMismatch("sparse LDL RHS differs"))
     tr=_trans_kind(trans); conjugated=T<:Complex && (F.hermitian ? tr==1 : tr==2)
-    X=ndims(b)==1 ? reshape(b[F.p],n,1) : b[F.p,:]; conjugated && (X .= conj.(X))
-    workers=_operation_workers(size(X,2),Float64(length(F.L.values))*size(X,2),threaded,262144)
-    _foreach_range(size(X,2),workers) do columns,_
+    workers=_operation_workers(size(B,2),Float64(length(F.L.values))*size(B,2),threaded,262144)
+    _foreach_range(size(B,2),workers) do columns,_
+        x=Vector{T}(undef,n)
         for rhs in columns
-            xv=view(X,:,rhs)
-            _ldl_forward!(xv,F.L)
+            @inbounds for i in 1:n
+                v=B[F.p[i],rhs]
+                x[i]=conjugated ? conj(v) : v
+            end
+            _ldl_forward!(x,F.L)
             k=1
             for step in F.blocks
                 if step==1
-                    X[k,rhs]/=F.diagonal[k]
+                    x[k]/=F.diagonal[k]
                 else
                     scale,a,bb,c,bh,det=_ldl_block_scaled(F.diagonal[k],F.offdiagonal[k],F.diagonal[k+1],F.hermitian,k)
-                    x,y=X[k,rhs]/scale,X[k+1,rhs]/scale
-                    X[k,rhs]=(c*x-bh*y)/det; X[k+1,rhs]=(a*y-bb*x)/det
+                    xk,yk=x[k]/scale,x[k+1]/scale
+                    x[k]=(c*xk-bh*yk)/det; x[k+1]=(a*yk-bb*xk)/det
                 end
                 k+=step
             end
-            _ldl_backward!(xv,F.L,F.hermitian)
+            _ldl_backward!(x,F.L,F.hermitian)
+            @inbounds for i in 1:n
+                B[F.p[i],rhs]=conjugated ? conj(x[i]) : x[i]
+            end
         end
     end
-    result=similar(X)
-    for rhs in axes(X,2), i in 1:n
-        result[F.p[i],rhs]=conjugated ? conj(X[i,rhs]) : X[i,rhs]
-    end
-    ndims(b)==1 ? vec(result) : result
+    B
+end
+function solve(F::SparseLDLFactor{T},b::AbstractVecOrMat{T};trans=:N,threaded=true) where T
+    n=length(F.p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LDL RHS differs"))
+    _ldl_solve!(F,copyto!(similar(b),b);trans,threaded)
 end
 """Inertia from real/Hermitian pivot blocks in working precision. tol applies
 to D-block eigenvalues, not to eigenvalues of A or a certified spectral gap.
@@ -182,23 +188,30 @@ function sparse_lu_static(A::NativeSparse;epsilon=sqrt(eps(real(eltype(A)))),rel
     SparseStaticLUFactor(_rows_to_csr(lower,T,n),_rows_to_csr(upper,T,n),copy(q),q,epsilon,threshold,delta,
                          iszero(scale) ? (iszero(growth) ? one(R) : R(Inf)) : growth/scale)
 end
-function _sparse_lu_solve(L,U,p,q,b;trans=:N)
-    n=length(p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LU RHS differs"))
+function _sparse_lu_ldiv!(L,U,p,q,X;trans=:N)
+    n=length(p); Base.require_one_based_indexing(X); size(X,1)==n || throw(DimensionMismatch("sparse LU RHS differs"))
     tr=_trans_kind(trans); input=tr==0 ? p : q; output=tr==0 ? q : p
-    B=ndims(b)==1 ? b[input] : b[input,:]
-    X=tr==0 ? sparse_triangular_solve(U,sparse_triangular_solve(L,B;uplo=:L,unit=true);uplo=:U) :
-              sparse_triangular_solve(L,sparse_triangular_solve(U,B;uplo=:U,trans);uplo=:L,unit=true,trans)
-    result=similar(X)
-    if ndims(b)==1
-        for i in 1:n
-            result[output[i]]=X[i]
+    w=Vector{eltype(X)}(undef,n)
+    for rhs in axes(X,2)
+        @inbounds for i in 1:n
+            w[i]=X[input[i],rhs]
         end
-    else
-        for rhs in axes(X,2), i in 1:n
-            result[output[i],rhs]=X[i,rhs]
+        if tr==0
+            _sparse_triangular_solve!(w,L;uplo=:L,unit=true)
+            _sparse_triangular_solve!(w,U;uplo=:U)
+        else
+            _sparse_triangular_solve!(w,U;uplo=:U,trans)
+            _sparse_triangular_solve!(w,L;uplo=:L,unit=true,trans)
+        end
+        @inbounds for i in 1:n
+            X[output[i],rhs]=w[i]
         end
     end
-    result
+    X
+end
+function _sparse_lu_solve(L,U,p,q,b;trans=:N)
+    n=length(p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LU RHS differs"))
+    _sparse_lu_ldiv!(L,U,p,q,copyto!(similar(b),b);trans)
 end
 solve(F::SparseStaticLUFactor{T},b::AbstractVecOrMat{T};kwargs...) where T=_sparse_lu_solve(F.L,F.U,F.p,F.q,b;kwargs...)
 function sparse_direct_diagnostics(A::NativeSparse,F,b::AbstractVecOrMat{T},x=solve(F,b)) where T

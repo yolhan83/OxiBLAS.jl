@@ -45,8 +45,8 @@ S = OxiBLAS.svd(randn(40, 20))
 
 | Form | Semantics |
 |---|---|
-| `OxiBLAS.ldiv!(Y, F, B)` | reuses the factorization `F`; `Y` receives the solution, `B` is untouched |
-| `OxiBLAS.ldiv!(Y, A, B)` | first factorizes with `OxiBLAS.factorize(A)` |
+| `OxiBLAS.ldiv!(Y, F, B; workspace=nothing)` | reuses the factorization `F`; `Y` receives the solution, `B` is untouched |
+| `OxiBLAS.ldiv!(Y, A, B; workspace=nothing)` | first factorizes with `OxiBLAS.factorize(A)` |
 | `OxiBLAS.ldiv(F, B)`, `OxiBLAS.ldiv(A, B)` | allocating forms, `Vector` or `Matrix` like `B` |
 | `A \ B`, `LinearAlgebra.ldiv!(Y, A, B)` | on the OxiBLAS sparse formats and their wrappers |
 | `LinearAlgebra.ldiv!(A, B)` | square systems: `B` is overwritten with the solution |
@@ -60,7 +60,8 @@ x1 ≈ x2 ≈ y
 ```
 
 - **Dimensions.** `B` has `size(F, 1)` rows and `Y` has `size(F, 2)`.
-- **Rectangular systems.** A tall system gives the least-squares solution.
+- **Rectangular systems.** A tall system (`m > n`) gives the least-squares
+  solution; a wide dense system (`n > m`) gives the minimum-norm solution.
 - **In-place solve.** `Y === B` is allowed for a square system. A partial
   overlap between `Y` and `B` is refused.
 - **Right-hand side and destination.** A sparse `B` is read through a dense
@@ -68,6 +69,63 @@ x1 ≈ x2 ≈ y
 - **Precision.** The solve runs in the element type of the factorization. A
   real factor and a complex `B` of the same precision are solved as two real
   systems.
+
+### Zero-allocation rectangular solves and the `workspace` keyword
+
+Unlike `LinearAlgebra.ldiv!(Y, F, B)`, `OxiBLAS.ldiv!` accepts an optional
+`workspace` keyword argument:
+
+```julia
+OxiBLAS.ldiv!(Y, F, B; workspace=nothing)
+OxiBLAS.ldiv!(Y, A, B; workspace=nothing)
+```
+
+- **Why `workspace` exists.** On a rectangular factorization `F` of size
+  `m × n`, the underlying `LinearAlgebra.ldiv!(F, X)` primitive operates in
+  place on a buffer `X` of `max(m, n)` rows (`Qᴴ` is applied to the `m` rows
+  of `B`, and the `n` solution rows are written into the leading `n` rows of
+  `X`). When `m > n` (tall system), `Y` only has `n` rows and `B` must not be
+  modified, so an `m`-row buffer is needed.
+- **When `workspace` is NOT needed (`workspace=nothing` already avoids allocating `X`):**
+  1. **Square systems (`m == n`):** `B` is copied directly into `Y` and solved
+     in place in `Y` (0 allocations for sparse `Cholesky` and dense `LU`/`Cholesky`).
+  2. **Wide systems (`n > m`, e.g. underdetermined `LQ` or `QR`):** `Y` has
+     `n > m` rows, so `OxiBLAS.ldiv!` uses `Y` itself as the working buffer.
+  3. **`SVD` factorizations (any shape `m × n`):** `OxiBLAS.ldiv!` projects
+     `Uᴴ B` into a small rank-sized vector/matrix and writes `V (Σ⁻¹ Uᴴ B)`
+     directly into `Y`.
+  4. **Sparse right-hand sides (`B` sparse, `m ≥ n`):** the dense copy of `B`
+     is reused in place as the working buffer.
+- **When and how to use `workspace`:** When solving repeated tall least-squares
+  problems (`m > n`) in a loop with a dense `B` and `QR`, `QRPivoted`,
+  `QRSparse`, or `LQ'`, preallocate a buffer of at least `m` rows once per
+  task and pass it as `workspace`:
+
+```@example hl
+Tall = randn(200, 80); F_qr = OxiBLAS.qr(Tall)
+b = randn(200); y = zeros(80)
+ws = zeros(200)                              # allocated once per task (length >= m)
+OxiBLAS.ldiv!(y, F_qr, b; workspace=ws)      # 0 allocations
+y ≈ Tall \ b
+```
+
+  `workspace` must have 1-based indexing, size at least `(max(m, n), size(B, 2))`,
+  must not alias `Y` or `B`, and must be exclusive to the calling task during
+  the `ldiv!` call.
+
+## Keyword extensions beyond `LinearAlgebra`
+
+Where an OxiBLAS high-level function accepts keyword arguments beyond standard
+`LinearAlgebra` (or unifies SuiteSparse/CHOLMOD keywords on native engines),
+their meaning and usage are:
+
+| Function | Keyword(s) | Purpose and when to use |
+|---|---|---|
+| `OxiBLAS.ldiv!(Y, F_or_A, B; workspace=nothing)` | `workspace` | Caller-owned buffer of size `≥ (max(m, n), size(B, 2))` for tall (`m > n`) `QR` / `QRPivoted` / `QRSparse` / `LQ'` solves with dense `B`, avoiding the `m`-row temporary allocation in hot loops. |
+| `OxiBLAS.qr(A::sparse; ordering=:colamd)` | `ordering` | Fill-reducing column permutation for multifrontal sparse QR: `:colamd` (default), `:amd` (AMD of `AᵀA`), `:natural` (`1:n`), or a custom permutation vector of `1:n`. |
+| `OxiBLAS.cholesky(A::sparse; check=true, perm=nothing, shift=0)` | `perm`, `shift` | `perm`: custom fill-reducing permutation vector (`nothing` uses AMD). `shift`: diagonal shift `σ` factoring `A + σI` (as in CHOLMOD). `cholesky!(F, A; check=true, shift=0)` also accepts `shift` while reusing `F.p`. |
+| `OxiBLAS.ldlt(A::sparse; perm=nothing, shift=0)` | `perm`, `shift` | Same `perm` and `shift` options as `OxiBLAS.cholesky` for pivotless multifrontal `LDLᵀ`; `ldlt!(F, A; shift=0)` reuses `F.p`. |
+| `OxiBLAS.bunchkaufman(A::sparse, rook=false; check=true, perm=nothing)` | `perm` | Custom fill-reducing permutation vector (`nothing` uses AMD) for sparse indefinite Bunch–Kaufman factorization. |
 
 ## What `OxiBLAS.factorize` chooses
 

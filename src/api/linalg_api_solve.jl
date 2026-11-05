@@ -88,8 +88,8 @@ _dense_rhs(B::AbstractVecOrMat)=B
 _solve_eltype(F,B)=(T=Base.promote_op(\,eltype(F),eltype(B)); isconcretetype(T) ? T : promote_type(eltype(F),eltype(B)))
 
 """
-    OxiBLAS.ldiv!(Y, F::Factorization, B) -> Y
-    OxiBLAS.ldiv!(Y, A::AbstractMatrix, B) -> Y
+    OxiBLAS.ldiv!(Y, F::Factorization, B; workspace=nothing) -> Y
+    OxiBLAS.ldiv!(Y, A::AbstractMatrix, B; workspace=nothing) -> Y
 
 Solves `A*X = B` and writes `X` into `Y`, which has `size(A, 2)` rows and as
 many columns as `B`.
@@ -100,15 +100,34 @@ many columns as `B`.
   sparse input). An input that it does not accept gets a MethodError.
 - `B` is never modified, except with `Y === B` on a square system, which
   solves in place. A `Y` that only partially overlaps `B` is rejected.
-- A tall `F` gives the least-squares solution, a wide one the solution of
-  that factorization's own `ldiv!` (the minimum-norm one for dense `QR`/`LQ`);
-  the sparse QR has no wide solve.
+- A tall `F` (`m > n`) gives the least-squares solution, a wide one (`n > m`)
+  the solution of that factorization's own `ldiv!` (the minimum-norm one for
+  dense `QR`/`LQ`); the sparse QR has no wide solve.
+- **`workspace` (OxiBLAS extension beyond `LinearAlgebra.ldiv!`).**
+  - **Why:** For a tall orthogonal factorization (`QR`, `QRPivoted`,
+    `QRSparse`, or `LQ'` with `m > n`), the in-place primitive
+    `LinearAlgebra.ldiv!(F, X)` applies `Qᴴ` to an `m`-row buffer before
+    extracting the `n` solution rows. Because `Y` only has `n < m` rows and `B`
+    must not be overwritten, an `m`-row working buffer `X` is required.
+  - **When you do NOT need it:** On square systems (`m == n`), wide systems
+    (`n > m`, where `Y` itself has `n > m` rows and serves as the working
+    buffer), `SVD` factorizations (which project into rank-sized scratch and
+    write directly into `Y`), or when `B` is sparse (whose dense copy is
+    reused in place), `OxiBLAS.ldiv!` already avoids allocating `X` with
+    `workspace=nothing`.
+  - **When and how to use it:** When solving repeated tall least-squares
+    systems (`m > n`) in a hot loop with a dense `B` and `QR` / `QRPivoted` /
+    `QRSparse` / `LQ'`, preallocate `ws = Vector{T}(undef, m)` (or
+    `Matrix{T}(undef, m, nrhs)`) once per task and pass `workspace=ws` to
+    eliminate the `m`-row buffer allocation. `workspace` must have at least
+    `(max(m, n), size(B, 2))` elements, 1-based indexing, must not alias `Y`
+    or `B`, and must be exclusive to the calling task during the call.
 - `Y` must be a dense array: a solution is dense. A sparse `B` is read
   through a dense copy.
 - The solve runs in the factor's element type. A real factor and a complex
   `B` of the same precision are solved as two real systems.
 """
-function ldiv!(Y::AbstractVecOrMat,F::_LA.Factorization,B::AbstractVecOrMat)
+function ldiv!(Y::AbstractVecOrMat,F::_LA.Factorization,B::AbstractVecOrMat;workspace=nothing)
     Base.require_one_based_indexing(Y,B)
     m,n=size(F)
     size(B,1)==m || throw(DimensionMismatch("factorization has $m rows, right-hand side has $(size(B,1))"))
@@ -124,16 +143,37 @@ function ldiv!(Y::AbstractVecOrMat,F::_LA.Factorization,B::AbstractVecOrMat)
     Bd=_dense_rhs(B)
     if m==n
         copyto!(Y,Bd); _LA.ldiv!(F,Y)
+    elseif F isa SVD && eltype(Y)===eltype(F) && eltype(Bd)===eltype(F) && Y isa StridedVecOrMat && Bd isa StridedVecOrMat
+        _svd_solve!(Y,_eng(F),Bd)
+    elseif n>m && workspace===nothing && eltype(Y)===_solve_eltype(F,B) && Y isa StridedVecOrMat
+        fill!(Y,zero(eltype(Y)))
+        copyto!(view(Y,1:m,:),Bd); _LA.ldiv!(F,Y)
     else
         # The primitive ldiv!(F, X) reads and writes max(m,n) rows of X.
         rows=max(m,n); T=_solve_eltype(F,B)
-        X=B isa AbstractVector ? zeros(T,rows) : zeros(T,rows,size(B,2))
-        copyto!(view(X,1:m,:),Bd); _LA.ldiv!(F,X)
+        X=if workspace!==nothing
+            Base.require_one_based_indexing(workspace)
+            (size(workspace,1)>=rows && size(workspace,2)>=size(B,2)) ||
+                throw(DimensionMismatch("workspace has size $(size(workspace)), need at least ($rows, $(size(B,2)))"))
+            (Base.mightalias(workspace,Y) || Base.mightalias(workspace,B)) &&
+                throw(ArgumentError("workspace must not alias Y or B"))
+            W=B isa AbstractVector ? view(workspace,1:rows) : view(workspace,1:rows,1:size(B,2))
+            rows>m && fill!(view(W,m+1:rows,:),zero(eltype(W)))
+            W
+        elseif B!==Bd && m>=n && eltype(Bd)===T
+            Bd
+        elseif m>=n
+            B isa AbstractVector ? Vector{T}(undef,rows) : Matrix{T}(undef,rows,size(B,2))
+        else
+            B isa AbstractVector ? zeros(T,rows) : zeros(T,rows,size(B,2))
+        end
+        X===Bd || copyto!(view(X,1:m,:),Bd)
+        _LA.ldiv!(F,X)
         copyto!(Y,view(X,1:n,:))
     end
     Y
 end
-ldiv!(Y::AbstractVecOrMat,A::AbstractMatrix,B::AbstractVecOrMat)=ldiv!(Y,factorize(A),B)
+ldiv!(Y::AbstractVecOrMat,A::AbstractMatrix,B::AbstractVecOrMat;workspace=nothing)=ldiv!(Y,factorize(A),B;workspace)
 
 """
     OxiBLAS.ldiv(F::Factorization, B) -> X
@@ -143,7 +183,15 @@ Allocating form of `OxiBLAS.ldiv!`. `X` is a `Vector` or a `Matrix`, like
 `B`, with element type `promote_op(\\, eltype(F), eltype(B))`.
 """
 function ldiv(F::_LA.Factorization,B::AbstractVecOrMat)
-    n=size(F,2); T=_solve_eltype(F,B)
+    m,n=size(F); T=_solve_eltype(F,B)
+    if m>n && !(F isa SVD) && B isa AbstractVector
+        Base.require_one_based_indexing(B)
+        length(B)==m || throw(DimensionMismatch("factorization has $m rows, right-hand side has $(length(B))"))
+        Bd=_dense_rhs(B)
+        X=B!==Bd && eltype(Bd)===T && Bd isa Vector{T} ? Bd : copyto!(Vector{T}(undef,m),Bd)
+        _LA.ldiv!(F,X)
+        return resize!(X,n)
+    end
     ldiv!(B isa AbstractVector ? Vector{T}(undef,n) : Matrix{T}(undef,n,size(B,2)),F,B)
 end
 ldiv(A::AbstractMatrix,B::AbstractVecOrMat)=ldiv(factorize(A),B)

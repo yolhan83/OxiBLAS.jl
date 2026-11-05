@@ -116,6 +116,7 @@ function spai(A::NativeSparse;pattern_levels=1,droptol=zero(real(eltype(A))),thr
     columns=Vector{Vector{Int}}(undef,n); coefficients=Vector{Vector{T}}(undef,n)
     workers=threaded ? Threads.nthreads() : 1
     _foreach_range(n,workers) do range,_
+        rhs=zeros(T,n)
         for j in range
             support=Set{Int}([j])
             for _ in 1:pattern_levels
@@ -125,8 +126,8 @@ function spai(A::NativeSparse;pattern_levels=1,droptol=zero(real(eltype(A))),thr
                 end
                 support=next
             end
-            selected=sort!(collect(support)); B=_sparse_columns(C,selected); rhs=zeros(T,n); rhs[j]=one(T)
-            x=solve(sparse_qr(B),rhs)
+            selected=sort!(collect(support)); B=_sparse_columns(C,selected); rhs[j]=one(T)
+            x=solve(sparse_qr(B),rhs); rhs[j]=zero(T)
             keep=findall(v->abs(v)>droptol,x); columns[j]=selected[keep]; coefficients[j]=x[keep]
         end
     end
@@ -144,6 +145,7 @@ struct AdditiveSchwarzPreconditioner{T,R,F}
     domains::Vector{Vector{Int}}
     weights::Vector{R}
     work::Vector{Vector{T}}
+    rhs::Vector{Vector{T}}
     guard::ReentrantLock
     threaded::Bool
 end
@@ -163,19 +165,22 @@ function additive_schwarz(A::NativeSparse;subdomains=max(1,Threads.nthreads()),o
     end
     typed=isempty(factors) ? SparseLUFactor{T,R}[] : Vector{typeof(first(factors))}(factors)
     weights=R[Base.inv(sqrt(R(m))) for m in multiplicity]
-    AdditiveSchwarzPreconditioner(typed,domains,weights,[zeros(T,length(d)) for d in domains],ReentrantLock(),threaded)
+    AdditiveSchwarzPreconditioner(typed,domains,weights,[zeros(T,length(d)) for d in domains],[zeros(T,length(d)) for d in domains],ReentrantLock(),threaded)
 end
 function _precondition!(z,r,P::AdditiveSchwarzPreconditioner)
     length(z)==length(r)==length(P.weights) || throw(DimensionMismatch("Schwarz dimensions differ"))
     lock(P.guard) do
         _foreach_range(length(P.domains),P.threaded ? Threads.nthreads() : 1) do range,_
-            for k in range
-                domain=P.domains[k]; rhs=eltype(z)[P.weights[i]*r[i] for i in domain]
+            @inbounds for k in range
+                domain=P.domains[k]; rhs=P.rhs[k]
+                for (j,i) in enumerate(domain)
+                    rhs[j]=P.weights[i]*r[i]
+                end
                 _precondition!(P.work[k],rhs,P.factors[k])
             end
         end
         fill!(z,zero(eltype(z)))
-        for k in eachindex(P.domains), (j,i) in enumerate(P.domains[k])
+        @inbounds for k in eachindex(P.domains), (j,i) in enumerate(P.domains[k])
             z[i]+=P.weights[i]*P.work[k][j]
         end
         z
