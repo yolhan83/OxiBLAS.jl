@@ -66,7 +66,7 @@ Independent fronts run concurrently; inner TRSM/GEMM disable nested threading.
 No dense global Schur matrix or wrapper around blocked sparse LU is used.
 """
 function multifrontal_lu(A::NativeSparse;ordering=:auto,maxwidth::Union{Nothing,Integer}=nothing,
-                         pivot_threshold=real(eltype(A))(0.1),threaded=true)
+                         pivot_threshold=real(eltype(A))(0.1),threaded=true,check::Bool=true)
     n=_square(A); T=eltype(A); R=real(T)
     (maxwidth===nothing || maxwidth>=1) && isfinite(pivot_threshold) && 0<=pivot_threshold<=1 || throw(ArgumentError("invalid multifrontal LU options"))
     if ordering===:auto || ordering===:amd
@@ -77,14 +77,21 @@ function multifrontal_lu(A::NativeSparse;ordering=:auto,maxwidth::Union{Nothing,
         # large core). Explicit orderings use the row-element multifrontal.
         P=_symmetric_pattern(Cc,nothing)
         (ordering===:amd || _lu_symmetric_strategy(Cc,P[1])) &&
-            return _mf_lu_symmetric(Cc,real(T)(pivot_threshold),maxwidth===nothing ? typemax(Int) : Int(maxwidth),threaded,P)
+            return _mf_lu_symmetric(Cc,real(T)(pivot_threshold),maxwidth===nothing ? typemax(Int) : Int(maxwidth),threaded,P;check)
         # Unsymmetric pattern: left-looking LU with an AMD(AᵀA) column order.
-        return _mf_lu_unsymmetric(Cc,real(T)(pivot_threshold),maxwidth===nothing ? typemax(Int) : Int(maxwidth),threaded,P)
+        return _mf_lu_unsymmetric(Cc,real(T)(pivot_threshold),maxwidth===nothing ? typemax(Int) : Int(maxwidth),threaded,P;check)
     end
     maxwidth=maxwidth===nothing ? 24 : maxwidth
     C=CSRMatrix(COOMatrix(CSRMatrix(A))); all(isfinite,C.values) || throw(ArgumentError("finite multifrontal LU entries required"))
     initial=maximum(abs,C.values;init=zero(R)); isfinite(initial) || throw(ArgumentError("input magnitude overflow"))
-    q=sparse_ordering(C,ordering); tree=_row_element_lu_tree(C,q,Int(maxwidth)); groups=length(tree.nodes)
+    q=sparse_ordering(C,ordering)
+    tree=try
+        _row_element_lu_tree(C,q,Int(maxwidth))
+    catch err
+        (check || !(err isa SingularException)) && rethrow()
+        return _gp_lu_factor(_as_csc(A),R(pivot_threshold),q,nothing;check=false)
+    end
+    groups=length(tree.nodes)
     updates=Vector{Union{Nothing,_LUFrontUpdate{T}}}(nothing,groups)
     lower=[Dict{Int,T}() for _ in 1:n]; upper=[Dict{Int,T}() for _ in 1:n]; p=zeros(Int,n)
     shapes=Vector{Tuple{Int,Int}}(undef,groups); growth=fill(initial,groups)
@@ -118,7 +125,8 @@ function multifrontal_lu(A::NativeSparse;ordering=:auto,maxwidth::Union{Nothing,
             for i in j+1:r
                 value=abs(F[i,j]); value>largest && (pivot=i; largest=value)
             end
-            isfinite(largest) && largest>0 || throw(SingularException(k))
+            isfinite(largest) || throw(ArgumentError("multifrontal LU arithmetic overflow"))
+            largest>0 || throw(SingularException(k))
             preferred=findfirst(==(q[k]),rows)
             if preferred!==nothing && preferred>=j
                 magnitude=abs(F[preferred,j])
@@ -167,13 +175,18 @@ function multifrontal_lu(A::NativeSparse;ordering=:auto,maxwidth::Union{Nothing,
         r>width && c>width && (magnitude=max(magnitude,maximum(abs,view(F,width+1:r,width+1:c);init=zero(R))))
         growth[g]=magnitude
     end
-    for height in 1:maximum(tree.heights;init=0)
-        jobs=findall(==(height),tree.heights); workers=threaded ? min(length(jobs),Threads.nthreads()) : 1
-        _foreach_range(length(jobs),workers) do range,_
-            for i in range
-                factor_front(jobs[i],threaded && workers==1)
+    try
+        for height in 1:maximum(tree.heights;init=0)
+            jobs=findall(==(height),tree.heights); workers=threaded ? min(length(jobs),Threads.nthreads()) : 1
+            _foreach_range(length(jobs),workers) do range,_
+                for i in range
+                    factor_front(jobs[i],threaded && workers==1)
+                end
             end
         end
+    catch err
+        (check || !(err isa SingularException)) && rethrow()
+        return _gp_lu_factor(_as_csc(A),R(pivot_threshold),q,nothing;check=false)
     end
     sort(p)==collect(1:n) || error("multifrontal LU did not eliminate each original row once")
     lrows=[copy(lower[p[i]]) for i in 1:n]
@@ -225,7 +238,9 @@ end
 function logabsdet_factor(F::Union{MultifrontalLUFactor{T},SparseStaticLUFactor{T}}) where T
     value=zero(real(T)); phase=T(_direct_permutation_sign(F.p)*_direct_permutation_sign(F.q))
     for i in eachindex(F.p)
-        d=F.U[i,i]; magnitude=abs(d); value+=log(magnitude); phase*=d/magnitude
+        d=F.U[i,i]
+        iszero(d) && return (oftype(value,-Inf),zero(T))
+        magnitude=abs(d); value+=log(magnitude); phase*=d/magnitude
     end
     value,phase
 end
@@ -233,7 +248,9 @@ function logabsdet_factor(F::SparseLDLFactor{T}) where T
     value=zero(real(T)); phase=one(T); k=1
     for step in F.blocks
         if step==1
-            d=F.diagonal[k]; magnitude=abs(d); value+=log(magnitude); phase*=d/magnitude
+            d=F.diagonal[k]
+            iszero(d) && return (oftype(value,-Inf),zero(T))
+            magnitude=abs(d); value+=log(magnitude); phase*=d/magnitude
         else
             scale,_,_,_,_,det=_ldl_block_scaled(F.diagonal[k],F.offdiagonal[k],F.diagonal[k+1],F.hermitian,k)
             magnitude=abs(det); value+=2log(scale)+log(magnitude); phase*=det/magnitude

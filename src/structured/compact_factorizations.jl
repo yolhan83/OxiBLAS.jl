@@ -19,8 +19,9 @@ end
 operations and multipliers are retained in elimination order, as in GBTRF.
 No full matrix expansion is made.
 """
-function band_lu(A::BandedMatrix{T}) where {T<:GenericFloat}
+function band_lu(A::BandedMatrix{T};check::Bool=true) where {T<:GenericFloat}
     _pkcheck(A,:general); n=_square(A); kl=A.kl; ku=A.ku
+    all(isfinite,A.data) || throw(ArgumentError("non-finite band LU entries"))
     F=BandLUFactor(zeros(T,2kl+ku+1,n),collect(1:n),n,kl,ku)
     for j in 1:n, i in max(1,j-ku):min(n,j+kl)
         _bandlu_set!(F,A.data[ku+1+i-j,j],i,j)
@@ -29,9 +30,15 @@ function band_lu(A::BandedMatrix{T}) where {T<:GenericFloat}
     for j in 1:n
         pivot=j
         for i in j+1:min(n,j+kl)
-            abs(_bandlu_get(F,i,j))>abs(_bandlu_get(F,pivot,j)) && (pivot=i)
+            v=_bandlu_get(F,i,j); isfinite(v) || throw(ArgumentError("band LU arithmetic overflow"))
+            abs(v)>abs(_bandlu_get(F,pivot,j)) && (pivot=i)
         end
-        iszero(_bandlu_get(F,pivot,j)) && throw(SingularException(j))
+        pivval=_bandlu_get(F,pivot,j)
+        isfinite(pivval) || throw(ArgumentError("band LU arithmetic overflow"))
+        if iszero(pivval)
+            check && throw(SingularException(j))
+            continue
+        end
         F.pivots[j]=pivot; lastcol=max(lastcol,min(n,j+ku+pivot-j))
         if pivot!=j
             for col in j:lastcol
@@ -68,19 +75,21 @@ function solve(F::BandLUFactor{T},b::AbstractVecOrMat{T};trans=:N) where T
             end
         end
         for rhs in axes(X,2), i in n:-1:1
+            u=_bandlu_get(F,i,i); iszero(u) && throw(SingularException(i))
             value=X[i,rhs]
             for j in i+1:min(n,i+F.ku+F.kl)
                 value-=_bandlu_get(F,i,j)*X[j,rhs]
             end
-            X[i,rhs]=value/_bandlu_get(F,i,i)
+            X[i,rhs]=value/u
         end
     else
         for rhs in axes(X,2), i in 1:n
+            a=_bandlu_get(F,i,i); iszero(a) && throw(SingularException(i))
             value=X[i,rhs]
             for j in max(1,i-F.ku-F.kl):i-1
-                a=_bandlu_get(F,j,i); value-=(tr==2 ? conj(a) : a)*X[j,rhs]
+                aij=_bandlu_get(F,j,i); value-=(tr==2 ? conj(aij) : aij)*X[j,rhs]
             end
-            a=_bandlu_get(F,i,i); X[i,rhs]=value/(tr==2 ? conj(a) : a)
+            X[i,rhs]=value/(tr==2 ? conj(a) : a)
         end
         for j in n:-1:1
             for rhs in axes(X,2), i in j+1:min(n,j+F.kl)

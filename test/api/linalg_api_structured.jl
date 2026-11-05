@@ -61,12 +61,25 @@ end
     Fk=OB.factorize(K); @test Fk isa OB.BunchKaufman
     @test Fk\b ≈ Dk\b rtol=r
     @test LA.det(Fk) ≈ LA.det(Dk) rtol=r
+    @test Matrix(Fk.L)*Matrix(Fk.D)*Matrix(Fk.L)' ≈ Dk[Fk.p,Fk.p] rtol=r
+    # 2×2 pivot on zero leading diagonal (ldlt without pivoting must fail; bunchkaufman must succeed)
+    Z2=LA.SymTridiagonal(T[0,0,2],T[3,1]); Dz2=Matrix(Z2); bz2=T[1,2,3]
+    @test_throws LA.SingularException OB.ldlt(Z2)
+    Fz2=OB.bunchkaufman(Z2)
+    @test Fz2\bz2 ≈ Dz2\bz2 rtol=r
+    @test OB.det(Z2) ≈ LA.det(Dz2) rtol=r
+    @test OB.det(LA.SymTridiagonal(T[0,0],T[0])) == 0
     @test OB.lu(K)\b ≈ Dk\b rtol=r
     E=OB.eigen(S); λ,V=E
     @test D*V ≈ V*LA.Diagonal(λ) rtol=r
     @test OB.eigvals(S) ≈ LA.eigvals(D) rtol=r
+    @test OB.norm(S) ≈ LA.norm(D) rtol=r
+    @test OB.opnorm(S,1) ≈ LA.opnorm(D,1) rtol=r
+    @test OB.opnorm(S,Inf) ≈ LA.opnorm(D,Inf) rtol=r
     @test _api_linear_alloc(()->OB.eigvals(LA.SymTridiagonal(randn(T,2000),randn(T,1999))),2000,T)
     @test _api_linear_alloc(()->OB.cholesky(LA.SymTridiagonal(fill(T(4),2000),ones(T,1999))),2000,T)
+    @test _api_linear_alloc(()->OB.ldlt(LA.SymTridiagonal(fill(T(4),2000),ones(T,1999))),2000,T)
+    @test _api_linear_alloc(()->OB.bunchkaufman(LA.SymTridiagonal(randn(T,2000),randn(T,1999))),2000,T)
 end
 
 @testset "complex symmetric SymTridiagonal $T" for T in (ComplexF32,ComplexF64)
@@ -76,7 +89,11 @@ end
     @test F\b ≈ D\b rtol=r
     @test transpose(F)\b ≈ transpose(D)\b rtol=r
     @test F'\b ≈ D'\b rtol=r
+    @test Matrix(F.L)*Matrix(F.D)*transpose(Matrix(F.L)) ≈ D[F.p,F.p] rtol=r
+    @test OB.logabsdet(S)[1] ≈ LA.logabsdet(D)[1] rtol=r
+    @test OB.logabsdet(S)[2] ≈ LA.logabsdet(D)[2] rtol=r
     @test OB.factorize(S)\b ≈ D\b rtol=r
+    @test _api_linear_alloc(()->OB.factorize(LA.SymTridiagonal(randn(T,2000),randn(T,1999))),2000,T)
 end
 
 @testset "Bidiagonal $T $uplo" for T in (Float32,Float64,ComplexF32,ComplexF64), uplo in (:U,:L)

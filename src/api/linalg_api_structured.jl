@@ -54,15 +54,24 @@ function _bidiag_band(B::_LABidiag)
     end
     BandedMatrix(data,n;kl=upper ? 0 : 1,ku=upper ? 1 : 0,kind=:triangular,uplo=upper ? :U : :L)
 end
-# Lower triangle of a symmetric tridiagonal or symmetric/Hermitian band
-# matrix as an OxiBLAS CSC matrix, for the multifrontal LDLᵀ. Costs O(n·kd).
+# Lower triangle of a symmetric/Hermitian band matrix as an OxiBLAS CSC
+# matrix, for the multifrontal LDLᵀ. Costs O(n·kd) with 3 array allocations.
 function _band_lower_csc(A::AbstractMatrix,kd::Int)
-    n=_square(A); T=_la_eltype(eltype(A)); rows=Int[]; cols=Int[]; vals=T[]
-    for j in 1:n, i in j:min(n,j+kd)
-        v=A[i,j]; (i==j || !iszero(v)) || continue
-        push!(rows,i); push!(cols,j); push!(vals,v)
+    n=_square(A); T=_la_eltype(eltype(A))
+    colptr=Vector{Int}(undef,n+1); colptr[1]=1
+    nnz_max=n*(kd+1)
+    rowind=Vector{Int}(undef,nnz_max); vals=Vector{T}(undef,nnz_max); p=0
+    @inbounds for j in 1:n
+        for i in j:min(n,j+kd)
+            v=T(A[i,j])
+            if i==j || !iszero(v)
+                p+=1; rowind[p]=i; vals[p]=v
+            end
+        end
+        colptr[j+1]=p+1
     end
-    CSCMatrix(COOMatrix(n,n,rows,cols,vals))
+    resize!(rowind,p); resize!(vals,p)
+    CSCMatrix(_Shared(),n,n,colptr,rowind,vals)
 end
 
 # ==== substitution engine (triangular, bidiagonal, diagonal) ====================
@@ -139,7 +148,9 @@ function _LA.logabsdet(F::LU{T,<:TriangularEngine}) where T
     E=_eng(F); d=zero(real(T)); s=one(T)
     E.unit && return (d,s)
     for i in 1:size(E.src,1)
-        u=E.src[i,i]; d+=log(abs(u)); s*=sign(u)
+        u=E.src[i,i]
+        iszero(u) && return (oftype(d,-Inf),zero(T))
+        m=abs(u); d+=Base.log(m); s*=u/m
     end
     (d,s)
 end
@@ -174,7 +185,7 @@ Base.propertynames(F::LU{<:Any,<:TriangularEngine},private::Bool=false)=(:L,:U,:
 # ==== band LU (Diagonal, Bidiagonal, Tridiagonal, SymTridiagonal, BandedMatrix) =
 LU(E::BandLUFactor{T}) where T=LU{T,typeof(E)}(E)
 Base.size(F::LU{<:Any,<:BandLUFactor})=(_eng(F).n,_eng(F).n)
-_LA.issuccess(F::LU{<:Any,<:BandLUFactor})=true   # band_lu throws SingularException
+_LA.issuccess(F::LU{<:Any,<:BandLUFactor})=(E=_eng(F); all(j->!iszero(_bandlu_get(E,j,j)),1:E.n))
 for (W,tr) in ((:LU,:(:N)),(:_AdjF,:(:C)),(:_TrF,:(:T)))
     S=W===:LU ? :(LU{T,<:BandLUFactor}) : :($W{<:Any,<:LU{T,<:BandLUFactor}})
     @eval function _LA.ldiv!(Fw::$S,B::AbstractVecOrMat) where T
@@ -185,7 +196,9 @@ end
 function _LA.logabsdet(F::LU{T,<:BandLUFactor}) where T
     E=_eng(F); d=zero(real(T)); s=one(T)
     for j in 1:E.n
-        u=_bandlu_get(E,j,j); d+=log(abs(u)); s*=sign(u)
+        u=_bandlu_get(E,j,j)
+        iszero(u) && return (oftype(d,-Inf),zero(T))
+        m=abs(u); d+=Base.log(m); s*=u/m
         E.pivots[j]!=j && (s=-s)
     end
     (d,s)
@@ -220,7 +233,7 @@ end
 Base.propertynames(F::LU{<:Any,<:BandLUFactor},private::Bool=false)=(:L,:U,:p,(private ? (:engine,) : ())...)
 
 """
-    OxiBLAS.lu(A::Tridiagonal / SymTridiagonal / Bidiagonal / Diagonal / BandedMatrix)
+    OxiBLAS.lu(A::Tridiagonal / SymTridiagonal / Bidiagonal / Diagonal / BandedMatrix; check=true)
 
 Band LU with partial pivoting (`band_lu`). It works in (2kl+ku+1)×n compact
 storage, which includes the fill from pivoting, in O(n·kl·(kl+ku)) time
@@ -228,15 +241,15 @@ storage, which includes the fill from pivoting, in O(n·kl·(kl+ku)) time
 
 - `F.L`, `F.U` (sparse) and `F.p` are rebuilt on demand so that
   `F.L*F.U == A[F.p,:]`.
-- A singular matrix throws `SingularException` whatever the value of
-  `check`.
+- `check=false` retains a singular factor with a zero diagonal in `U`
+  (`issuccess(F) == false`) when a pivot column is zero.
 - There is no `lu!`: band storage cannot hold the fill.
 """
-lu(A::_LATridiag;check::Bool=true)=LU(band_lu(_band_general(A,1,1)))
-lu(A::_LASymTridiag;check::Bool=true)=LU(band_lu(_band_general(A,1,1)))
-lu(A::_LABidiag;check::Bool=true)=LU(band_lu(_band_general(A,A.uplo=='U' ? 0 : 1,A.uplo=='U' ? 1 : 0)))
-lu(A::_LADiag;check::Bool=true)=LU(band_lu(_band_general(A,0,0)))
-lu(A::BandedMatrix;check::Bool=true)=LU(band_lu(_band_lu_input(A)))
+lu(A::_LATridiag;check::Bool=true)=LU(band_lu(_band_general(A,1,1);check))
+lu(A::_LASymTridiag;check::Bool=true)=LU(band_lu(_band_general(A,1,1);check))
+lu(A::_LABidiag;check::Bool=true)=LU(band_lu(_band_general(A,A.uplo=='U' ? 0 : 1,A.uplo=='U' ? 1 : 0);check))
+lu(A::_LADiag;check::Bool=true)=LU(band_lu(_band_general(A,0,0);check))
+lu(A::BandedMatrix;check::Bool=true)=LU(band_lu(_band_lu_input(A);check))
 """
     OxiBLAS.lu(A::UpperTriangular / UnitUpperTriangular / packed upper triangular)
 
@@ -346,35 +359,234 @@ function cholesky(A::_LADiag;check::Bool=true)
 end
 
 # ==== LDLᵀ / Bunch–Kaufman: symmetric tridiagonal and band ======================
-# Multifrontal LDLᵀ in natural order on the lower triangle: the elimination
-# tree is a chain, the fill stays in the band, and symmetry is kept. Complex
-# symmetric (not Hermitian) input gets the LDLᵀ form.
-_band_ldl(A::_LASymTridiag,pivot)=sparse_ldlt(_band_lower_csc(A,1);uplo=:L,hermitian=eltype(A)<:Real,pivot,ordering=:natural)
-function _band_ldl(A::BandedMatrix,pivot)
+# Tridiagonal (kd ≤ 1) symmetric/Hermitian matrices use a dedicated compact
+# O(n) 1×1/2×2 Bunch–Kaufman / LDLᵀ engine (no row/column swaps or fill-in
+# outside the band ever occur on a tridiagonal matrix). Wider bands (kd > 1)
+# use the multifrontal engine in natural order on the lower triangle.
+struct TridiagLDLFactor{T}
+    d::Vector{T}         # 1×1 pivots and diagonals of 2×2 pivots (length n)
+    du::Vector{T}        # subdiagonal D[k+1,k] of 2×2 pivots (length max(n-1,0))
+    l1::Vector{T}        # L[k+1,k] (length max(n-1,0))
+    l2::Vector{T}        # L[k+2,k] for 2×2 pivots (length max(n-2,0))
+    blocks::Vector{Int}  # step sizes (1 or 2)
+    hermitian::Bool
+end
+BunchKaufman(E::TridiagLDLFactor{T}) where T=BunchKaufman{T,typeof(E)}(E)
+LDLt(E::TridiagLDLFactor{T}) where T=LDLt{T,typeof(E)}(E)
+Base.size(F::Union{BunchKaufman{<:Any,<:TridiagLDLFactor},LDLt{<:Any,<:TridiagLDLFactor}})=(n=length(_eng(F).d);(n,n))
+function _LA.issuccess(F::Union{BunchKaufman{<:Any,<:TridiagLDLFactor},LDLt{<:Any,<:TridiagLDLFactor}})
+    E=_eng(F); k=1
+    @inbounds for step in E.blocks
+        step==1 && iszero(E.d[k]) && return false
+        k+=step
+    end
+    true
+end
+
+function _tridiag_ldlt(d::Vector{T},e::AbstractVector{T},hermitian::Bool,pivot::Symbol;check::Bool=true) where T
+    (all(isfinite,d) && all(isfinite,e)) || throw(ArgumentError("non-finite tridiagonal LDL entries"))
+    n=length(d); R=real(T)
+    hermitian=hermitian || T<:Real
+    if hermitian && T<:Complex
+        @inbounds for i in 1:n; d[i]=T(real(d[i])); end
+    end
+    du=zeros(T,max(n-1,0))
+    l1=zeros(T,max(n-1,0))
+    l2=zeros(T,max(n-2,0))
+    blocks=Vector{Int}(undef,n); nb=0
+    α=(one(R)+sqrt(R(17)))/8
+    k=1
+    @inbounds while k<=n
+        step=1
+        if pivot===:bunchkaufman && k<n
+            ω1=abs(e[k])
+            if ω1>zero(R)
+                adk=abs(d[k])
+                if adk<α*ω1
+                    ω2=k+1<n ? max(ω1,abs(e[k+1])) : ω1
+                    if adk*ω2<α*ω1*ω1
+                        s=max(adk,ω1,abs(d[k+1]))
+                        aa,bb,cc=d[k]/s,e[k]/s,d[k+1]/s
+                        bh=hermitian ? conj(bb) : bb
+                        det=_native_madd(aa,cc,-bb*bh)
+                        isfinite(det) || throw(ArgumentError("tridiagonal LDL arithmetic overflow"))
+                        if !iszero(det)
+                            step=2
+                        end
+                    end
+                end
+            end
+        end
+        if step==1
+            dk=d[k]
+            isfinite(dk) || throw(ArgumentError("tridiagonal LDL arithmetic overflow"))
+            if iszero(dk)
+                (check || (k<n && !iszero(e[k]))) && throw(SingularException(k))
+            elseif k<n
+                ek=e[k]; ekc=hermitian ? conj(ek) : ek
+                lk=ek/dk; l1[k]=lk
+                d[k+1]-=lk*ekc
+                hermitian && T<:Complex && (d[k+1]=T(real(d[k+1])))
+            end
+            nb+=1; blocks[nb]=1; k+=1
+        else
+            scale,aa,bb,cc,bh,det=_ldl_block_scaled(d[k],e[k],d[k+1],hermitian,k)
+            du[k]=e[k]
+            if k+1<n
+                ek1=e[k+1]; ek1c=hermitian ? conj(ek1) : ek1
+                eks=ek1/scale
+                l2[k]=(-eks*bb)/det
+                l1k1=(eks*aa)/det
+                l1[k+1]=l1k1
+                d[k+2]-=l1k1*ek1c
+                hermitian && T<:Complex && (d[k+2]=T(real(d[k+2])))
+            end
+            nb+=1; blocks[nb]=2; k+=2
+        end
+    end
+    resize!(blocks,nb)
+    TridiagLDLFactor{T}(d,du,l1,l2,blocks,hermitian)
+end
+
+function _ldl_solve!(E::TridiagLDLFactor{T},B::AbstractVecOrMat{T}) where T
+    n=length(E.d); d,du,l1,l2,blocks,herm=E.d,E.du,E.l1,E.l2,E.blocks,E.hermitian
+    nb=length(blocks)
+    @inbounds for j in axes(B,2)
+        k=1
+        for b in 1:nb
+            step=blocks[b]
+            if step==1
+                k<n && (B[k+1,j]-=l1[k]*B[k,j])
+                k+=1
+            else
+                k+1<n && (B[k+2,j]-=l2[k]*B[k,j]+l1[k+1]*B[k+1,j])
+                k+=2
+            end
+        end
+        k=1
+        for b in 1:nb
+            step=blocks[b]
+            if step==1
+                iszero(d[k]) && throw(SingularException(k))
+                B[k,j]/=d[k]
+                k+=1
+            else
+                scale,aa,bb,cc,bh,det=_ldl_block_scaled(d[k],du[k],d[k+1],herm,k)
+                xk,yk=B[k,j]/scale,B[k+1,j]/scale
+                B[k,j]=(cc*xk-bh*yk)/det
+                B[k+1,j]=(aa*yk-bb*xk)/det
+                k+=2
+            end
+        end
+        k=n+1
+        for b in nb:-1:1
+            step=blocks[b]
+            if step==1
+                k-=1
+                if k<n
+                    lk=herm ? conj(l1[k]) : l1[k]
+                    B[k,j]-=lk*B[k+1,j]
+                end
+            else
+                k-=2
+                if k+1<n
+                    bk2=B[k+2,j]
+                    l1k=herm ? conj(l1[k+1]) : l1[k+1]
+                    l2k=herm ? conj(l2[k]) : l2[k]
+                    B[k+1,j]-=l1k*bk2
+                    B[k,j]-=l2k*bk2
+                end
+            end
+        end
+    end
+    B
+end
+
+function _LA.logabsdet(F::Union{BunchKaufman{T,<:TridiagLDLFactor},LDLt{T,<:TridiagLDLFactor}}) where T
+    E=_eng(F); value=zero(real(T)); phase=one(T); k=1
+    @inbounds for step in E.blocks
+        if step==1
+            d=E.d[k]
+            iszero(d) && return (oftype(value,-Inf),zero(T))
+            magnitude=abs(d); value+=Base.log(magnitude); phase*=d/magnitude
+        else
+            scale,_,_,_,_,det=_ldl_block_scaled(E.d[k],E.du[k],E.d[k+1],E.hermitian,k)
+            magnitude=abs(det); value+=2Base.log(scale)+Base.log(magnitude); phase*=det/magnitude
+        end
+        k+=step
+    end
+    (value,phase)
+end
+
+function _tridiag_ldl_L(E::TridiagLDLFactor{T}) where T
+    n=length(E.d)
+    colptr=Vector{Int}(undef,n+1); colptr[1]=1
+    rowind=Int[]; vals=T[]; sizehint!(rowind,2n); sizehint!(vals,2n)
+    @inbounds for j in 1:n
+        push!(rowind,j); push!(vals,one(T))
+        if j<n && !iszero(E.l1[j])
+            push!(rowind,j+1); push!(vals,E.l1[j])
+        end
+        if j+1<n && !iszero(E.l2[j])
+            push!(rowind,j+2); push!(vals,E.l2[j])
+        end
+        colptr[j+1]=length(vals)+1
+    end
+    SparseMatrixCSC(n,n,colptr,rowind,vals)
+end
+function Base.getproperty(F::Union{BunchKaufman{<:Any,<:TridiagLDLFactor},LDLt{<:Any,<:TridiagLDLFactor}},s::Symbol)
+    E=_eng(F)
+    s===:L && return _tridiag_ldl_L(E)
+    s===:D && return F isa LDLt ? _LA.Diagonal(copy(E.d)) :
+        _LA.Tridiagonal(copy(E.du),copy(E.d),[E.hermitian ? conj(x) : x for x in E.du])
+    s===:p && return collect(1:length(E.d))
+    s===:hermitian && return E.hermitian
+    getfield(F,s)
+end
+Base.propertynames(F::Union{BunchKaufman{<:Any,<:TridiagLDLFactor},LDLt{<:Any,<:TridiagLDLFactor}},private::Bool=false)=
+    (:L,:D,:p,(private ? (:hermitian,:engine) : ())...)
+SparseArrays.nnz(F::Union{BunchKaufman{<:Any,<:TridiagLDLFactor},LDLt{<:Any,<:TridiagLDLFactor}})=
+    (E=_eng(F); length(E.d)+count(!iszero,E.l1)+count(!iszero,E.l2))
+
+function _band_ldl(A::_LASymTridiag,pivot;check::Bool=true)
+    n=size(A,1); T=_la_eltype(eltype(A))
+    ev=eltype(A)===T ? view(A.ev,1:max(n-1,0)) : _fvec(view(A.ev,1:max(n-1,0)))
+    _tridiag_ldlt(_fvec(A.dv),ev,T<:Real,pivot;check)
+end
+function _band_ldl(A::BandedMatrix,pivot;check::Bool=true)
     A.kind in (:symmetric,:hermitian) || throw(ArgumentError("LDLᵀ needs symmetric or Hermitian band storage"))
-    sparse_ldlt(_band_lower_csc(A,_kd(A));uplo=:L,hermitian=A.kind===:hermitian || eltype(A)<:Real,pivot,ordering=:natural)
+    herm=A.kind===:hermitian || eltype(A)<:Real
+    kd=_kd(A)
+    if kd<=1
+        n=_square(A); T=_la_eltype(eltype(A))
+        d=T[A[i,i] for i in 1:n]
+        e=T[A[i+1,i] for i in 1:max(n-1,0)]
+        return _tridiag_ldlt(d,e,herm,pivot;check)
+    end
+    sparse_ldlt(_band_lower_csc(A,kd);uplo=:L,hermitian=herm,pivot,ordering=:natural,check)
 end
 """
-    OxiBLAS.ldlt(A::SymTridiagonal / symmetric BandedMatrix)
-    OxiBLAS.bunchkaufman(A::SymTridiagonal / symmetric BandedMatrix)
+    OxiBLAS.ldlt(A::SymTridiagonal / symmetric BandedMatrix; check=true)
+    OxiBLAS.bunchkaufman(A::SymTridiagonal / symmetric BandedMatrix, rook=false; check=true)
 
 LDLᵀ without pivoting (as LinearAlgebra's `ldlt(::SymTridiagonal)`), or with
-Bunch–Kaufman pivoting. Both use the multifrontal engine (`sparse_ldlt`) in
-natural order, in O(n·kd²) time and memory.
+Bunch–Kaufman pivoting. Tridiagonals (`kd ≤ 1`) use the compact O(n)
+`TridiagLDLFactor` engine; wider bands use the multifrontal engine
+(`sparse_ldlt`) in natural order, in O(n·kd²) time and memory.
 """
-ldlt(A::Union{_LASymTridiag,BandedMatrix})=LDLt(_band_ldl(A,:none))
+ldlt(A::Union{_LASymTridiag,BandedMatrix};check::Bool=true)=LDLt(_band_ldl(A,:none;check))
 bunchkaufman(A::Union{_LASymTridiag,BandedMatrix},rook::Bool=false;check::Bool=true)=
-    (rook && throw(ArgumentError("rook pivoting is not available; use rook=false")); BunchKaufman(_band_ldl(A,:bunchkaufman)))
+    (rook && throw(ArgumentError("rook pivoting is not available; use rook=false")); BunchKaufman(_band_ldl(A,:bunchkaufman;check)))
 
 # ==== factorize =================================================================
 """
-    OxiBLAS.factorize(A) for structured matrices
+    OxiBLAS.factorize(A; check=true) for structured matrices
 
 | Input | Result |
 |---|---|
 | `Diagonal`, `Bidiagonal`, triangular (dense, band, packed) | `LU` with `TriangularEngine`: substitution, no elimination |
 | `Tridiagonal`, general `BandedMatrix` | band `LU` |
-| `SymTridiagonal`, symmetric/Hermitian `BandedMatrix` | band `Cholesky` if A is positive definite (real or Hermitian), otherwise `BunchKaufman` (multifrontal, natural order) |
+| `SymTridiagonal`, symmetric/Hermitian `BandedMatrix` | band `Cholesky` if A is positive definite (real or Hermitian), otherwise `BunchKaufman` |
 | Hermitian/real symmetric `PackedMatrix` | packed `Cholesky` |
 
 An indefinite `PackedMatrix` gets an `ArgumentError`: no packed indefinite
@@ -382,9 +594,9 @@ engine exists.
 """
 # Separate methods: a Union mixing dense triangulars with other types would be
 # ambiguous with factorize(::_DenseIn).
-factorize(A::Union{_LADiag,_LABidiag})=LU(_tri_engine(A))
-factorize(A::Union{_DenseUpperTri,_DenseLowerTri})=LU(_tri_engine(A))
-factorize(A::_LATridiag)=lu(A)
+factorize(A::Union{_LADiag,_LABidiag};check::Bool=true)=LU(_tri_engine(A))
+factorize(A::Union{_DenseUpperTri,_DenseLowerTri};check::Bool=true)=LU(_tri_engine(A))
+factorize(A::_LATridiag;check::Bool=true)=lu(A;check)
 function _try_chol(f)
     try
         return f()
@@ -393,19 +605,19 @@ function _try_chol(f)
         return nothing
     end
 end
-function factorize(A::_LASymTridiag)
+function factorize(A::_LASymTridiag;check::Bool=true)
     if eltype(A)<:Real
         C=_try_chol(()->cholesky(A)); C===nothing || return C
     end
-    bunchkaufman(A)
+    bunchkaufman(A;check)
 end
-function factorize(A::BandedMatrix)
-    A.kind===:general && return lu(A)
+function factorize(A::BandedMatrix;check::Bool=true)
+    A.kind===:general && return lu(A;check)
     A.kind===:triangular && return LU(_tri_engine(A))
     C=_try_chol(()->cholesky(A)); C===nothing || return C
-    bunchkaufman(A)
+    bunchkaufman(A;check)
 end
-function factorize(A::PackedMatrix)
+function factorize(A::PackedMatrix;check::Bool=true)
     A.kind===:triangular && return LU(_tri_engine(A))
     C=cholesky(A;check=false)
     _LA.issuccess(C) && return C
@@ -502,9 +714,15 @@ svdvals(D::_LADiag)=sort!(abs.(_fvec(D.diag));rev=true)
 # Dense triangulars get their own methods (a joint Union would be ambiguous
 # with det(::_DenseIn)).
 const _StructIn=Union{_LADiag,_LABidiag,_LATridiag,_LASymTridiag,BandedMatrix,PackedMatrix}
+_struct_det_factor(A::_StructIn)=factorize(A;check=false)
+function _struct_det_factor(A::PackedMatrix)
+    A.kind===:triangular && return LU(_tri_engine(A))
+    C=cholesky(A;check=false)
+    _LA.issuccess(C) ? C : lu(Matrix(A);check=false)
+end
 for f in (:det,:logdet,:logabsdet)
-    @eval $f(A::_StructIn)=_LA.$f(factorize(A))
-    @eval $f(A::Union{_DenseUpperTri,_DenseLowerTri})=_LA.$f(factorize(A))
+    @eval $f(A::_StructIn)=(_LA.checksquare(A); _LA.$f(_struct_det_factor(A)))
+    @eval $f(A::Union{_DenseUpperTri,_DenseLowerTri})=_LA.$f(factorize(A;check=false))
 end
 """
     OxiBLAS.inv(A) for structured matrices
@@ -565,14 +783,14 @@ end
 
 Go through the triangle that the wrapper selects, converted in O(n) to a
 symmetric or Hermitian `BandedMatrix`, so to the band engines
-(`band_cholesky`, multifrontal LDLᵀ, `band_lu`). For a real symmetric
+(`band_cholesky`, `TridiagLDLFactor`, `band_lu`). For a real symmetric
 input, `eigen`/`eigvals` go to `eigen_tridiagonal`.
 """
 cholesky(H::_StructHS;check::Bool=true)=cholesky(_struct_band(H);check)
-ldlt(H::_StructHS)=ldlt(_struct_band(H))
+ldlt(H::_StructHS;check::Bool=true)=ldlt(_struct_band(H);check)
 bunchkaufman(H::_StructHS,rook::Bool=false;check::Bool=true)=bunchkaufman(_struct_band(H),rook;check)
 lu(H::_StructHS;check::Bool=true)=lu(_struct_band(H);check)
-factorize(H::_StructHS)=factorize(_struct_band(H))
+factorize(H::_StructHS;check::Bool=true)=factorize(_struct_band(H);check)
 for f in (:det,:logdet,:logabsdet)
     @eval $f(H::_StructHS)=$f(_struct_band(H))
 end
@@ -585,6 +803,80 @@ function _struct_symtridiag(H::_RealStructHS)
 end
 eigen(H::_RealStructHS)=eigen(_struct_symtridiag(H))
 eigvals(H::_RealStructHS)=eigvals(_struct_symtridiag(H))
+
+_struct_bands(::_LADiag)=(0,0)
+_struct_bands(B::_LABidiag)=B.uplo=='U' ? (0,1) : (1,0)
+_struct_bands(::Union{_LATridiag,_LASymTridiag})=(1,1)
+_struct_bands(A::BandedMatrix)=A.kind in (:symmetric,:hermitian) ? (_kd(A),_kd(A)) : (A.kl,A.ku)
+_struct_bands(A::PackedMatrix)=A.kind===:triangular ? (A.upper ? (0,A.n-1) : (A.n-1,0)) : (A.n-1,A.n-1)
+_struct_bands(H::_StructHS)=parent(H) isa _LADiag ? (0,0) : (1,1)
+
+function norm(A::Union{_StructIn,_StructHS},p::Real=2)
+    T=_la_eltype(eltype(A)); R=real(T); m,n=size(A); kl,ku=_struct_bands(A)
+    if p==2
+        s=zero(R)
+        @inbounds for j in 1:n, i in max(1,j-ku):min(m,j+kl)
+            s+=abs2(T(A[i,j]))
+        end
+        return sqrt(s)
+    elseif p==1
+        s=zero(R)
+        @inbounds for j in 1:n, i in max(1,j-ku):min(m,j+kl)
+            s+=abs(T(A[i,j]))
+        end
+        return s
+    elseif p==Inf
+        mx=zero(R)
+        @inbounds for j in 1:n, i in max(1,j-ku):min(m,j+kl)
+            v=abs(T(A[i,j])); v>mx && (mx=v)
+        end
+        return mx
+    elseif p==0
+        c=0
+        @inbounds for j in 1:n, i in max(1,j-ku):min(m,j+kl)
+            !iszero(A[i,j]) && (c+=1)
+        end
+        return R(c)
+    elseif p==-Inf
+        mn=R(Inf); nz=0
+        @inbounds for j in 1:n, i in max(1,j-ku):min(m,j+kl)
+            v=abs(T(A[i,j]))
+            iszero(v) && return zero(R)
+            nz+=1; v<mn && (mn=v)
+        end
+        return nz<m*n ? zero(R) : mn
+    end
+    s=zero(R)
+    @inbounds for j in 1:n, i in max(1,j-ku):min(m,j+kl)
+        s+=abs(T(A[i,j]))^p
+    end
+    s^inv(p)
+end
+function opnorm(A::Union{_StructIn,_StructHS},p::Real=2)
+    p in (1,2,Inf) || throw(ArgumentError("p must be 1, 2 or Inf"))
+    T=_la_eltype(eltype(A)); R=real(T); m,n=size(A); kl,ku=_struct_bands(A)
+    if p==1
+        mx=zero(R)
+        @inbounds for j in 1:n
+            s=zero(R)
+            for i in max(1,j-ku):min(m,j+kl); s+=abs(T(A[i,j])); end
+            s>mx && (mx=s)
+        end
+        return mx
+    elseif p==Inf
+        mx=zero(R)
+        @inbounds for i in 1:m
+            s=zero(R)
+            for j in max(1,i-kl):min(n,i+ku); s+=abs(T(A[i,j])); end
+            s>mx && (mx=s)
+        end
+        return mx
+    end
+    if A isa Union{_LADiag,_LABidiag}
+        s=svdvals(A); return isempty(s) ? zero(R) : s[1]
+    end
+    matrix_norm(Matrix{T}(A),:two)
+end
 
 # ==== LinearAlgebra extensions: OxiBLAS compact types only ======================
 # As for the sparse formats, Julia's generic `A \ b` on a BandedMatrix or a

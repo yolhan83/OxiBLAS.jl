@@ -40,11 +40,12 @@ wrappers. The chosen engine exploits the structure.
 | Type | Engine |
 |---|---|
 | `Tridiagonal` | [`band_lu`](@ref), O(n) |
-| real `SymTridiagonal` | [`band_cholesky`](@ref) (`cholesky`), [`eigen_tridiagonal`](@ref) (`eigen`) |
+| real `SymTridiagonal` | [`band_cholesky`](@ref) (`cholesky` SPD), compact O(n) LDLᵀ (`bunchkaufman`/`ldlt` indefinite), [`eigen_tridiagonal`](@ref) (`eigen`) |
+| complex `SymTridiagonal` | compact O(n) LDLᵀ (`bunchkaufman`/`ldlt`), [`band_lu`](@ref) (`lu`) |
 | `Bidiagonal` | substitution (`factorize`), bidiagonal QR kernel (`svd`) |
 | `Diagonal` | direct operations, O(n) |
 | triangular | `TriangularEngine`: substitution, no elimination |
-| [`BandedMatrix`](@ref) | [`band_lu`](@ref), [`band_cholesky`](@ref), multifrontal for LDLᵀ |
+| [`BandedMatrix`](@ref) | [`band_lu`](@ref), [`band_cholesky`](@ref), compact O(n) LDLᵀ for `kd ≤ 1`, multifrontal for `kd > 1` |
 | [`PackedMatrix`](@ref) | [`packed_cholesky`](@ref), [`tpsv!`](@ref) |
 
 **The LinearAlgebra functions are left intact.** The structured types of Julia

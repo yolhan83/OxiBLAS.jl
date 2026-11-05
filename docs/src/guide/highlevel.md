@@ -122,10 +122,21 @@ their meaning and usage are:
 | Function | Keyword(s) | Purpose and when to use |
 |---|---|---|
 | `OxiBLAS.ldiv!(Y, F_or_A, B; workspace=nothing)` | `workspace` | Caller-owned buffer of size `≥ (max(m, n), size(B, 2))` for tall (`m > n`) `QR` / `QRPivoted` / `QRSparse` / `LQ'` solves with dense `B`, avoiding the `m`-row temporary allocation in hot loops. |
+| `OxiBLAS.factorize(A; check=true)` | `check` | Forwarded across structured and sparse branches. When `check=false`, factorizations that support singular representations retain zero pivots with `issuccess(F) == false`. |
+| `OxiBLAS.lu(A::sparse; check=true)` | `check` | When `check=false`, multifrontal and supernodal LU retain zero diagonal entries on singular matrices, returning `issuccess(F) == false` while allowing `det`/`logabsdet` evaluation. |
 | `OxiBLAS.qr(A::sparse; ordering=:colamd)` | `ordering` | Fill-reducing column permutation for multifrontal sparse QR: `:colamd` (default), `:amd` (AMD of `AᵀA`), `:natural` (`1:n`), or a custom permutation vector of `1:n`. |
 | `OxiBLAS.cholesky(A::sparse; check=true, perm=nothing, shift=0)` | `perm`, `shift` | `perm`: custom fill-reducing permutation vector (`nothing` uses AMD). `shift`: diagonal shift `σ` factoring `A + σI` (as in CHOLMOD). `cholesky!(F, A; check=true, shift=0)` also accepts `shift` while reusing `F.p`. |
-| `OxiBLAS.ldlt(A::sparse; perm=nothing, shift=0)` | `perm`, `shift` | Same `perm` and `shift` options as `OxiBLAS.cholesky` for pivotless multifrontal `LDLᵀ`; `ldlt!(F, A; shift=0)` reuses `F.p`. |
-| `OxiBLAS.bunchkaufman(A::sparse, rook=false; check=true, perm=nothing)` | `perm` | Custom fill-reducing permutation vector (`nothing` uses AMD) for sparse indefinite Bunch–Kaufman factorization. |
+| `OxiBLAS.ldlt(A::sparse; check=true, perm=nothing, shift=0)` | `check`, `perm`, `shift` | Same `perm` and `shift` options as `OxiBLAS.cholesky` for pivotless multifrontal `LDLᵀ`; `ldlt!(F, A; shift=0)` reuses `F.p`. |
+| `OxiBLAS.bunchkaufman(A::sparse, rook=false; check=true, perm=nothing)` | `check`, `perm` | Custom fill-reducing permutation vector (`nothing` uses AMD) for sparse indefinite Bunch–Kaufman factorization. |
+
+## Singular matrices, determinants and `check=false`
+
+OxiBLAS enforces clear separation between mathematically singular matrices, numerical failures, and linear solves:
+- **`check=false` in LU, LDLᵀ and Bunch–Kaufman:** When a matrix is structurally or numerically singular with genuinely zero pivots, setting `check=false` allows the engine to retain the singular factor (with zero diagonal entries) and flag `issuccess(F) == false`.
+- **Determinants:** `det(A)`, `logabsdet(A)`, and `logdet(A)` automatically exploit `check=false` via structural factorization without swallowing arbitrary errors:
+  - For a singular matrix $A$: `det(A) == zero(T)`, `logabsdet(A) == (-Inf, zero(T))`, and `logdet(A) == -Inf` (or complex logarithm of zero according to standard Julia conventions).
+  - A numerical overflow or non-finite floating-point input throws an `ArgumentError`, not a zero determinant.
+- **Linear solves (`F \ b`):** Solves that require an invertible matrix refuse singular factors and throw `SingularException`, ensuring mathematical safety.
 
 ## What `OxiBLAS.factorize` chooses
 
