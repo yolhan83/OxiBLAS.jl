@@ -56,6 +56,8 @@ _mulkind(::_LA.Diagonal)=:diagonal
 _mulkind(::_Tri)=:triangular
 _mulkind(::_SymHerm)=:symmetric
 _mulkind(::_LABand)=:band
+_mulkind(::BandedMatrix)=:banded_compact
+_mulkind(::PackedMatrix)=:packed_compact
 _mulkind(::AbstractVector)=:vector
 _mulkind(::AbstractMatrix)=:dense
 _mulsparse(X)=_mulkind(X) in (:sparse,:sparsevec)
@@ -141,6 +143,8 @@ _mul_convert(::Type{T},X::_LA.Tridiagonal) where T=_LA.Tridiagonal(T.(X.dl),T.(X
 _mul_convert(::Type{T},X::_LA.SymTridiagonal) where T=_LA.SymTridiagonal(T.(X.dv),T.(X.ev))
 _mul_convert(::Type{T},X::Transpose) where T=transpose(_mul_operand(T,parent(X)))
 _mul_convert(::Type{T},X::Adjoint) where T=adjoint(_mul_operand(T,parent(X)))
+_mul_convert(::Type{T},X::BandedMatrix) where T=BandedMatrix(Matrix{T}(X.data),X.m;kl=X.kl,ku=X.ku,kind=X.kind,uplo=X.upper ? :U : :L,unit=X.unit)
+_mul_convert(::Type{T},X::PackedMatrix) where T=PackedMatrix(Vector{T}(X.data),X.n;uplo=X.upper ? :U : :L,kind=X.kind,unit=X.unit)
 _mul_convert(::Type{T},X::AbstractArray) where T=T.(X)
 
 # Storage-level aliasing. The arrays an operand reads (through views,
@@ -157,6 +161,7 @@ _mul_storage(X::Union{Transpose,Adjoint})=_mulsparse(X) ? _mul_storage(parent(X)
 _mul_storage(X::SparseMatrixCSC)=(SparseArrays.nonzeros(X),)
 _mul_storage(X::SparseVector)=(SparseArrays.nonzeros(X),)
 _mul_storage(X::Union{CSRMatrix,CSCMatrix,COOMatrix,SparseTensor})=(X.values,)
+_mul_storage(X::Union{BandedMatrix,PackedMatrix})=(X.data,)
 _mul_storage(X::AbstractArray)=(X,)
 function _mul_detach(C,X)
     C isa SparseDestination && return X
@@ -164,6 +169,7 @@ function _mul_detach(C,X)
     any(s->any(c->_mightalias(c,s),out),_mul_storage(X)) ? _mul_copy(X) : X
 end
 _mul_copy(X::_OxiSparse)=_mul_convert(eltype(X),X)   # keeps the format (copy would densify)
+_mul_copy(X::Union{BandedMatrix,PackedMatrix})=_compact_copy(X)
 _mul_copy(X::Union{Transpose,Adjoint})=_mulsparse(X) ? (X isa Transpose ? transpose : adjoint)(_mul_copy(parent(X))) : copy(X)
 _mul_copy(X)=copy(X)
 
@@ -190,6 +196,8 @@ function _mul_dispatch!(C,A,B,α,β)
     kb===:symmetric && return _mul_symmetric!(C,B,A,α,β,false)
     ka===:band && return _mul_band!(C,A,B,α,β,true)
     kb===:band && return _mul_band!(C,B,A,α,β,false)
+    ka===:banded_compact && (kb===:vector || kb===:dense) && A.kind!==:triangular && return _mul_banded_compact!(C,A,B,α,β)
+    ka===:packed_compact && kb===:vector && A.kind!==:triangular && return _mul_packed_compact!(C,A,B,α,β)
     _mul_dense!(C,A,B,α,β)
 end
 # Structured operands met in a dense role (the other side of a sparse
@@ -310,6 +318,35 @@ function _mul_band!(C,Bd,X,α,β,left)
         end
     end
     C
+end
+function _mul_banded_compact!(C,A::BandedMatrix,B,α,β)
+    if ndims(B)==1
+        A.kind===:general && return gbmv!(C,A,B,α,β)
+        A.kind===:symmetric && return sbmv!(C,A,B,α,β)
+        A.kind===:hermitian && return hbmv!(C,A,B,α,β)
+        throw(ArgumentError("unsupported compact banded matrix kind $(A.kind)"))
+    end
+    if A.kind===:general
+        for j in axes(B,2)
+            gbmv!(view(C,:,j),A,view(B,:,j),α,β)
+        end
+    elseif A.kind===:symmetric
+        for j in axes(B,2)
+            sbmv!(view(C,:,j),A,view(B,:,j),α,β)
+        end
+    elseif A.kind===:hermitian
+        for j in axes(B,2)
+            hbmv!(view(C,:,j),A,view(B,:,j),α,β)
+        end
+    else
+        throw(ArgumentError("unsupported compact banded matrix kind $(A.kind)"))
+    end
+    C
+end
+function _mul_packed_compact!(C,A::PackedMatrix,B,α,β)
+    A.kind===:symmetric && return spmv!(C,A,B,α,β;threaded=false)
+    A.kind===:hermitian && return hpmv!(C,A,B,α,β;threaded=false)
+    throw(ArgumentError("unsupported compact packed matrix kind $(A.kind)"))
 end
 
 # ---- sparse -----------------------------------------------------------------
