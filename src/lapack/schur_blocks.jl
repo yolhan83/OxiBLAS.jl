@@ -107,18 +107,28 @@ function _pencil_weights(a,b,sa,sb)
     pa*exp(la-largest),pb*exp(lb-largest)
 end
 
+# B === nothing: ordinary eigenvectors (B is the identity, never formed).
 function _pencil_vectors(S,B,alpha,beta;left=false)
-    _check_schur_form(S,B); n=size(S,1); R=real(eltype(S)); C=Complex{R}
+    ordinary=B===nothing
+    ordinary ? _check_schur_form(S) : _check_schur_form(S,B)
+    n=size(S,1); R=real(eltype(S)); C=Complex{R}
     length(alpha)==length(beta)==n || throw(DimensionMismatch("homogeneous pair dimensions differ"))
     blocks=_schur_blocks(S); X=zeros(C,n,n)
-    sa=_finite_scale(S); sb=_finite_scale(B)
+    sa=_finite_scale(S); sb=ordinary ? one(R) : _finite_scale(B)
+    Bij(i,j)=ordinary ? (i==j ? one(R) : zero(R)) : B[i,j]
     for (index,block) in enumerate(blocks), col in block
         a,b=alpha[col],beta[col]
         iszero(a) && iszero(b) && throw(ArgumentError("indeterminate singular pencil has no unique eigenvectors"))
         # Normalize S/B separately before homogeneous combinations.
         aa,bb=_pencil_weights(a,b,sa,sb)
-        entry(i,j)=bb*_realdiv(C(S[i,j]),sa)-aa*_realdiv(C(B[i,j]),sb)
+        entry(i,j)=bb*_realdiv(C(S[i,j]),sa)-aa*_realdiv(C(Bij(i,j)),sb)
         m(i,j)=left ? conj(entry(j,i)) : entry(i,j)
+        # Off-diagonal entries for the O(n^3) substitution sums: the scale
+        # factors are formed once per column, and the B term vanishes for
+        # ordinary eigenvectors (two complex divisions per term before).
+        ks=bb/sa; kb=aa/sb
+        offentry(i,j)=ordinary ? ks*S[i,j] : ks*S[i,j]-kb*B[i,j]
+        off(i,j)=left ? conj(offentry(j,i)) : offentry(i,j)
         if length(block)==1
             X[first(block),col]=one(C)
         else
@@ -142,7 +152,7 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
                 # (New names: r and i of the enclosing loop hold other values.)
                 row=first(rows); acc=zero(C)
                 for j in known
-                    acc-=m(row,j)*X[j,col]
+                    acc-=off(row,j)*X[j,col]
                 end
                 if abs(acc)>0
                     x1=_small_solve1(C(m(row,row)),acc)
@@ -157,7 +167,7 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
                 # form of the general path below, without its small arrays.
                 r1,r2=first(rows),last(rows); acc1=zero(C); acc2=zero(C)
                 for j in known
-                    xj=X[j,col]; acc1-=m(r1,j)*xj; acc2-=m(r2,j)*xj
+                    xj=X[j,col]; acc1-=off(r1,j)*xj; acc2-=off(r2,j)*xj
                 end
                 if max(abs(acc1),abs(acc2))>0
                     x1,x2=_small_solve2(C(m(r1,r1)),C(m(r2,r1)),C(m(r1,r2)),C(m(r2,r2)),acc1,acc2)
@@ -169,7 +179,7 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
             end
             D=C[m(i,j) for i in rows,j in rows]; rhs=zeros(C,length(rows))
             for (ii,i) in enumerate(rows), j in known
-                rhs[ii]-=m(i,j)*X[j,col]
+                rhs[ii]-=off(i,j)*X[j,col]
             end
             if maximum(abs,rhs;init=zero(R))>0
                 y=_small_solve(D,rhs;perturb=true)
@@ -187,7 +197,7 @@ end
 function _ordinary_vectors(S;left=false)
     _check_schur_form(S); C=Complex{real(eltype(S))}; n=size(S,1)
     values=_schur_values(S,one(real(eltype(S))))
-    _pencil_vectors(S,_identity(eltype(S),n),C.(values),ones(C,n);left)
+    _pencil_vectors(S,nothing,C.(values),ones(C,n);left)
 end
 
 """Native block TREVC. Real input stores a conjugate pair as real/imaginary
