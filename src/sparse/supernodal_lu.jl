@@ -130,7 +130,7 @@ function _lu_col_update!(F,f,k,j0,j1)
     F
 end
 
-function _mf_lu_symmetric(A::NativeSparse,pivot_threshold,maxwidth,threaded,symmetric=_symmetric_pattern(_as_csc(A),nothing))
+function _mf_lu_symmetric(A::NativeSparse,pivot_threshold,maxwidth,threaded,symmetric=_symmetric_pattern(_as_csc(A),nothing);check::Bool=true)
     C=_as_csc(A); n=size(C,1); T=eltype(C); R=real(T); ident=collect(1:n)
     initial=maximum(abs,C.values;init=zero(R))
     # Symbolic analysis of A+Aᵀ (see src/sparse/supernodal_cholesky.jl).
@@ -223,11 +223,19 @@ function _mf_lu_symmetric(A::NativeSparse,pivot_threshold,maxwidth,threaded,symm
             _lu_col_update!(F,f,k,done[k]+1,k-1); done[k]=k-1
             colmax=zero(R)
             for i in k:f
-                colmax=max(colmax,abs(F[i,k]))
+                v=abs(F[i,k])
+                isfinite(v) || throw(ArgumentError("multifrontal LU arithmetic overflow"))
+                colmax=max(colmax,v)
             end
-            iszero(colmax) && throw(SingularException(p[FC[k]]))
             r=0; d=rpos[FC[k]]
-            if k<=d<=nfs && FR[d]==FC[k] && !iszero(F[d,k]) && abs(F[d,k])>=pivot_threshold*colmax
+            if iszero(colmax)
+                check && throw(SingularException(p[FC[k]]))
+                if k<=d<=nfs && FR[d]==FC[k]
+                    r=d
+                elseif isroot
+                    r=k
+                end
+            elseif k<=d<=nfs && FR[d]==FC[k] && !iszero(F[d,k]) && abs(F[d,k])>=pivot_threshold*colmax
                 r=d
             else
                 best=k; bv=abs(F[k,k])
@@ -254,9 +262,11 @@ function _mf_lu_symmetric(A::NativeSparse,pivot_threshold,maxwidth,threaded,symm
                 end
                 FR[k],FR[r]=FR[r],FR[k]; rpos[FR[k]]=k; rpos[FR[r]]=r
             end
-            inv=one(T)/F[k,k]
-            @simd for i in k+1:f
-                F[i,k]*=inv
+            if !iszero(F[k,k])
+                inv=one(T)/F[k,k]
+                @simd for i in k+1:f
+                    F[i,k]*=inv
+                end
             end
             k+=1
         end
@@ -412,7 +422,9 @@ function _lu_csr_solve!(x,L::CSRMatrix,U::CSRMatrix)
     end
     @inbounds for i in n:-1:1
         lo,hi=up[i]+1,up[i+1]-1
-        d=Base.inv(uv[up[i]])
+        u=uv[up[i]]
+        iszero(u) && throw(SingularException(i))
+        d=Base.inv(u)
         x[i]=(hi>=lo ? x[i]-_lu_rowdot(uv,uc,x,lo,hi) : x[i])*d
     end
     x
@@ -457,7 +469,7 @@ end
 # |x[row]| ≥ τ·max|candidates|. Returns
 # L (unit diagonal, CSR, rows in pivot order) and U (CSR) with
 # A[p,q] = L·U.
-function _gp_lu(C::CSCMatrix{T},τ,q=nothing,pref=nothing) where T
+function _gp_lu(C::CSCMatrix{T},τ,q=nothing,pref=nothing;check::Bool=true) where T
     n=size(C,1); R=real(T)
     Lp=Vector{Int}(undef,n+1); Lp[1]=1; Li=Int[]; Lx=T[]   # by columns, original rows
     Up=Vector{Int}(undef,n+1); Up[1]=1; Ui=Int[]; Ux=T[]   # by columns, pivot rows
@@ -509,13 +521,23 @@ function _gp_lu(C::CSCMatrix{T},τ,q=nothing,pref=nothing) where T
         for t in top:n
             i=xi[t]
             if pinv[i]==0
-                a=abs(x[i]); a>amax && (amax=a; ipiv=i)
+                v=x[i]; isfinite(v) || throw(ArgumentError("multifrontal LU arithmetic overflow"))
+                a=abs(v); a>amax && (amax=a; ipiv=i)
             else
                 push!(Ui,pinv[i]); push!(Ux,x[i])
             end
         end
-        (ipiv==0 || iszero(amax) || !isfinite(amax)) && throw(SingularException(col))
         d=pref===nothing ? col : pref[j]
+        if ipiv==0 || iszero(amax)
+            check && throw(SingularException(col))
+            ipiv=(d!=0 && pinv[d]==0) ? d : something(findfirst(==(0),pinv),0)
+            for t in top:n
+                x[xi[t]]=zero(T)
+            end
+            push!(Ui,j); push!(Ux,zero(T)); Up[j+1]=length(Ui)+1
+            pinv[ipiv]=j; push!(Li,ipiv); push!(Lx,one(T)); Lp[j+1]=length(Li)+1
+            continue
+        end
         d!=0 && pinv[d]==0 && mark[d]==j && !iszero(x[d]) && abs(x[d])>=τ*amax && (ipiv=d)
         piv=x[ipiv]; push!(Ui,j); push!(Ux,piv); Up[j+1]=length(Ui)+1
         pinv[ipiv]=j; push!(Li,ipiv); push!(Lx,one(T))
@@ -623,7 +645,16 @@ end
 # Peierls LU with the singleton rows as preferred pivots, returned as a
 # multifrontal factor of width-1 nodes. A core larger than n/4 goes to the
 # column-front multifrontal LU instead, in the same column order.
-function _mf_lu_unsymmetric(C::CSCMatrix{T},pivot_threshold,maxwidth,threaded,P) where T
+function _gp_lu_factor(C::CSCMatrix{T},pivot_threshold,q,pref=nothing;check::Bool=true) where T
+    n=size(C,1); R=real(T); initial=maximum(abs,C.values;init=zero(R))
+    L,U,p=_gp_lu(C,R(pivot_threshold),q,pref;check)
+    growth=max(initial,maximum(abs,L.values;init=zero(R)),maximum(abs,U.values;init=zero(R)))
+    isfinite(growth) || throw(ArgumentError("multifrontal LU arithmetic overflow"))
+    MultifrontalLUFactor(L,U,p,q,zeros(Int,n),[j:j for j in 1:n],fill((1,1),n),R(pivot_threshold),
+                         iszero(initial) ? one(R) : growth/initial)
+end
+
+function _mf_lu_unsymmetric(C::CSCMatrix{T},pivot_threshold,maxwidth,threaded,P;check::Bool=true) where T
     n=size(C,1); R=real(T); initial=maximum(abs,C.values;init=zero(R))
     headc,headr,tailc,tailr,crows,ccols=_lu_singletons(C)
     qcore=if isempty(ccols)
@@ -643,15 +674,14 @@ function _mf_lu_unsymmetric(C::CSCMatrix{T},pivot_threshold,maxwidth,threaded,P)
         ccols[colamd_ordering(Ccore)]
     end
     q=vcat(headc,qcore,tailc); pref=vcat(headr,zeros(Int,length(qcore)),tailr)
-    length(q)==n || throw(SingularException(1))   # structurally rank deficient
+    if length(q)!=n
+        check && throw(SingularException(1))   # structurally rank deficient
+        return _gp_lu_factor(C,pivot_threshold,collect(1:n),nothing;check=false)
+    end
     # A large core goes to the column-front multifrontal LU (dense fronts);
     # the left-looking kernel is kept when the singletons leave little.
-    length(ccols)>n÷4 && return _mf_lu_colfront(C,q,pivot_threshold)
-    L,U,p=_gp_lu(C,R(pivot_threshold),q,pref)
-    growth=max(initial,maximum(abs,L.values;init=zero(R)),maximum(abs,U.values;init=zero(R)))
-    isfinite(growth) || throw(ArgumentError("multifrontal LU arithmetic overflow"))
-    MultifrontalLUFactor(L,U,p,q,zeros(Int,n),[j:j for j in 1:n],fill((1,1),n),R(pivot_threshold),
-                         iszero(initial) ? one(R) : growth/initial)
+    length(ccols)>n÷4 && return _mf_lu_colfront(C,q,pivot_threshold,pref;check)
+    _gp_lu_factor(C,pivot_threshold,q,pref;check)
 end
 
 # Unsymmetric multifrontal LU on the column fronts of the QR (George and Ng:
@@ -668,10 +698,13 @@ end
 # tree; uncapped, a 5000² unsymmetric matrix got a 3109² root front (×8.4 of
 # UMFPACK), 256 gave ×6.4 (64 to 512 measured).
 const _LU_COLFRONT_WIDTH=256
-function _mf_lu_colfront(C::CSCMatrix{T},q,pivot_threshold) where T
+function _mf_lu_colfront(C::CSCMatrix{T},q,pivot_threshold,pref=nothing;check::Bool=true) where T
     n=size(C,1); R=real(T); initial=maximum(abs,C.values;init=zero(R))
     qinv,parent,starts,nf,children,rc,rj,rv,leftmost,frows=_colfront_symbolic(C,q,(0.8,0.1,0.05),_LU_COLFRONT_WIDTH)
-    any(>(n),leftmost) && throw(SingularException(1))    # an empty row
+    if any(>(n),leftmost)
+        check && throw(SingularException(1))    # an empty row
+        return _gp_lu_factor(C,pivot_threshold,q,pref;check=false)
+    end
     # Rows left by a front travel, sparse, to the front of their first
     # nonzero column (always a later front: the fronts partition the columns
     # in order), not through the parent: a row untouched by the parent's
@@ -709,7 +742,10 @@ function _mf_lu_colfront(C::CSCMatrix{T},q,pivot_threshold) where T
         # so that a block of pivots only updates the rows already started
         # (the others have zero multipliers there).
         nown=length(frows[s]); nr=nown+length(pend[s])
-        nr>=w || throw(SingularException(q[a+nr]))
+        if nr<w
+            check && throw(SingularException(q[a+nr]))
+            return _gp_lu_factor(C,pivot_threshold,q,pref;check=false)
+        end
         key=Vector{Int}(undef,nr); FR0=Vector{Int}(undef,nr)
         for (l,i) in enumerate(frows[s])
             key[l]=cpos[leftmost[i]]; FR0[l]=i
@@ -762,7 +798,10 @@ function _mf_lu_colfront(C::CSCMatrix{T},q,pivot_threshold) where T
                     end
                     0<c<cbest && (cbest=c; jbest=j)
                 end
-                jbest==0 && throw(SingularException(q[FC[k]]))
+                if jbest==0
+                    check && throw(SingularException(q[FC[k]]))
+                    return _gp_lu_factor(C,pivot_threshold,q,pref;check=false)
+                end
                 if jbest!=k
                     for i in 1:nr
                         F[i,k],F[i,jbest]=F[i,jbest],F[i,k]
@@ -771,9 +810,14 @@ function _mf_lu_colfront(C::CSCMatrix{T},q,pivot_threshold) where T
                 end
                 amax=zero(R)
                 for i in k:r1
-                    amax=max(amax,abs(F[i,k]))
+                    v=abs(F[i,k])
+                    isfinite(v) || throw(ArgumentError("multifrontal LU arithmetic overflow"))
+                    amax=max(amax,v)
                 end
-                (iszero(amax) || !isfinite(amax)) && throw(SingularException(q[FC[k]]))
+                if iszero(amax)
+                    check && throw(SingularException(q[FC[k]]))
+                    return _gp_lu_factor(C,pivot_threshold,q,pref;check=false)
+                end
                 r=0; best=typemax(Int); bv=zero(R)
                 for i in k:r1
                     v=abs(F[i,k]); (iszero(v) || v<pivot_threshold*amax) && continue
@@ -850,7 +894,10 @@ function _mf_lu_colfront(C::CSCMatrix{T},q,pivot_threshold) where T
             for j in w+1:nc
                 iszero(F[i,j]) || (c+=1)
             end
-            c==0 && throw(SingularException(q[FC[w]]))
+            if c==0
+                check && throw(SingularException(q[FC[w]]))
+                return _gp_lu_factor(C,pivot_threshold,q,pref;check=false)
+            end
             cols=Vector{Int}(undef,c); vals=Vector{T}(undef,c); l=0
             for j in w+1:nc
                 v=F[i,j]; iszero(v) && continue

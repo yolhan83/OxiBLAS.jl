@@ -227,6 +227,23 @@ Also: `OxiBLAS.det`, `logabsdet`, `inv`, `pinv` ([`pseudoinverse`](@ref)),
 `OxiBLAS.log`, `sin`, `cos`, `sylvester`, `lyap`, [`frechet_exp`](@ref),
 [`kron_product`](@ref), [`kronecker_action`](@ref).
 
+### Compute determinants on singular or indefinite matrices
+
+```@example howto
+# Singular sparse matrix with zero diagonal pivot
+S_sing = spdiagm(0 => [1.0, 0.0, 2.0, 3.0])
+(OxiBLAS.det(S_sing), OxiBLAS.logabsdet(S_sing))   # returns (0.0, (-Inf, 0.0))
+```
+
+Factorizations also allow preserving the singular state via `check=false`:
+
+```@example howto
+F_sing = OxiBLAS.lu(S_sing; check=false)
+(LinearAlgebra.issuccess(F_sing), LinearAlgebra.logabsdet(F_sing))
+```
+
+While `det(F_sing)` computes `0.0`, trying to solve `F_sing \ b` safely throws a `SingularException`.
+
 ## Multiply matrices
 
 ```@example howto

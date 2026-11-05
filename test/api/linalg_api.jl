@@ -336,13 +336,30 @@ end
         @test C\b ≈ Pd\b rtol=r
         @test C.PtL*C.PtL' ≈ P rtol=r
         @test LA.logdet(C) ≈ LA.logdet(Pd) rtol=r
+        @test OB.logdet(X) ≈ LA.logdet(Pd) rtol=r
+        @test OB.logabsdet(X)[1] ≈ LA.logabsdet(Pd)[1] rtol=r
+        @test OB.logabsdet(X)[2] ≈ one(T) rtol=r
+        @test OB.norm(X) ≈ LA.norm(Pd) rtol=r
+        @test OB.opnorm(X,1) ≈ LA.opnorm(Pd,1) rtol=r
+        @test OB.opnorm(X,Inf) ≈ LA.opnorm(Pd,Inf) rtol=r
     end
     @test LA.cholesky(LA.Hermitian(CSRMatrix(P))) isa OB.Cholesky
+    @test LA.logdet(LA.Hermitian(CSRMatrix(P))) ≈ LA.logdet(Pd) rtol=r
     C=OB.cholesky(P); P2=copy(P); P2.nzval .*= 3; OB.cholesky!(C,P2); @test C\b ≈ (3Pd)\b rtol=r
     @test OB.factorize(P) isa OB.Cholesky
     K=S+S'; K[1,1]=-K[1,1]-n; Kd=Matrix(K)
     @test OB.factorize(K) isa OB.BunchKaufman
     @test OB.bunchkaufman(K)\b ≈ Kd\b rtol=r
+    @test OB.logabsdet(K)[1] ≈ LA.logabsdet(Kd)[1] rtol=r
+    @test OB.logabsdet(K)[2] ≈ LA.logabsdet(Kd)[2] rtol=r
+    @test OB.logabsdet(S)[1] ≈ LA.logabsdet(D)[1] rtol=r
+    @test OB.logabsdet(S)[2] ≈ LA.logabsdet(D)[2] rtol=r
+    @test OB.norm(CSRMatrix(S)) ≈ LA.norm(D) rtol=r
+    @test OB.opnorm(CSRMatrix(S),1) ≈ LA.opnorm(D,1) rtol=r
+    @test OB.opnorm(CSRMatrix(S),Inf) ≈ LA.opnorm(D,Inf) rtol=r
+    Ssing=copy(S); Ssing[:,2].=0; SparseArrays.dropzeros!(Ssing)
+    @test OB.det(Ssing) == 0 && OB.logabsdet(Ssing)[1] == -Inf && iszero(OB.logabsdet(Ssing)[2])
+    @test_throws DimensionMismatch OB.det(sprandn(T,4,3,0.5))
     @test OB.ldlt(P)\b ≈ Pd\b rtol=r
     @test OB.ldlt(P) isa OB.LDLt
     M=sprandn(T,3n,n,0.1)+[sparse(T(n)*LA.I,n,n);spzeros(T,2n,n)]; c=randn(T,3n); Md=Matrix(M)

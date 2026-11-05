@@ -12,10 +12,12 @@ end
 Base.size(F::SparseLDLFactor)=size(F.L)
 function _ldl_block_scaled(a,b,c,hermitian,k)
     scale=max(abs(a),abs(b),abs(c))
-    isfinite(scale) && scale>0 || throw(SingularException(k))
+    isfinite(scale) || throw(ArgumentError("sparse LDL arithmetic overflow"))
+    scale>0 || throw(SingularException(k))
     aa,bb,cc=a/scale,b/scale,c/scale; bh=_ldlconj(bb,hermitian)
     determinant=_native_madd(aa,cc,-bb*bh)
-    isfinite(determinant) && !iszero(determinant) || throw(SingularException(k))
+    isfinite(determinant) || throw(ArgumentError("sparse LDL arithmetic overflow"))
+    !iszero(determinant) || throw(SingularException(k))
     scale,aa,bb,cc,bh,determinant
 end
 """Sparse symmetric/Hermitian LDL with Bunch–Kaufman 1x1/2x2 pivots, by
@@ -24,10 +26,10 @@ read. Factor identity: A[p,p]=L*D*(hermitian ? L' : transpose(L)); p is the
 elimination order (the ordering composed with a postorder and the pivots).
 pivot=:none is also supported. Exact zero pivots are errors, not perturbations.
 """
-function sparse_ldlt(A::NativeSparse;uplo=:L,hermitian=true,pivot=:bunchkaufman,ordering=:natural)
+function sparse_ldlt(A::NativeSparse;uplo=:L,hermitian=true,pivot=:bunchkaufman,ordering=:natural,check::Bool=true)
     _square(A); _uplo(uplo)
     pivot in (:none,:bunchkaufman) || throw(ArgumentError("unknown sparse LDL pivot mode"))
-    _mf_ldlt(A,uplo,hermitian,pivot,ordering,typemax(Int))
+    _mf_ldlt(A,uplo,hermitian,pivot,ordering,typemax(Int);check)
 end
 # Unit lower solves with L by columns (rows sorted, the stored unit diagonal
 # skipped): forward axpys, backward dot products (conjugated for a Hermitian
@@ -84,7 +86,9 @@ function _ldl_solve!(F::SparseLDLFactor{T},B::AbstractVecOrMat{T};trans=:N,threa
             k=1
             for step in F.blocks
                 if step==1
-                    x[k]/=F.diagonal[k]
+                    d=F.diagonal[k]
+                    iszero(d) && throw(SingularException(F.p[k]))
+                    x[k]/=d
                 else
                     scale,a,bb,c,bh,det=_ldl_block_scaled(F.diagonal[k],F.offdiagonal[k],F.diagonal[k+1],F.hermitian,k)
                     xk,yk=x[k]/scale,x[k+1]/scale

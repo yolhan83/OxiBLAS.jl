@@ -112,7 +112,27 @@ schur_pencil(A,R,T,N,r)=(B=pencil_B(R,T,r); (()->O.schur(A,B), ()->LA.schur(R,B)
 
 # ---- functions of a matrix ------------------------------------------------
 scalar_case(f,g)=(A,R,T,N,r)->(()->f(A), ()->g(R), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,N),xr))
-logabsdet_case(A,R,T,N,r)=(()->O.logabsdet(A), ()->LA.logabsdet(R),
+scale_mat(A::LA.Hermitian,c)=LA.Hermitian(scale_mat(parent(A),c),Symbol(A.uplo))
+scale_mat(A::LA.UpperTriangular,c)=LA.UpperTriangular(parent(A)*c)
+scale_mat(A::LA.Diagonal,c)=LA.Diagonal(A.diag.*c)
+scale_mat(A::LA.Bidiagonal,c)=LA.Bidiagonal(A.dv.*c,A.ev.*c,Symbol(A.uplo))
+scale_mat(A::LA.Tridiagonal,c)=LA.Tridiagonal(A.dl.*c,A.d.*c,A.du.*c)
+scale_mat(A::LA.SymTridiagonal,c)=LA.SymTridiagonal(A.dv.*c,A.ev.*c)
+scale_mat(A::BandedMatrix,c)=BandedMatrix(A.data.*c,A.m,A.kl,A.ku,A.kind,A.upper,A.unit)
+scale_mat(A::CSRMatrix,c)=CSRMatrix(A.m,A.n,copy(A.rowptr),copy(A.colind),A.values.*c)
+scale_mat(A::AbstractMatrix,c)=A*c
+# LinearAlgebra.det / logabsdet on Hermitian{SparseMatrixCSC} falls back to
+# _factorize -> isdiag (O(N²)) -> dense bunchkaufman; use cholesky(R) for the
+# SPD reference and record it explicitly in ref_input/note (see run.jl).
+ref_det(R)=R isa LA.Hermitian{<:Any,<:SparseMatrixCSC} ? LA.det(LA.cholesky(R)) : LA.det(R)
+ref_logabsdet(R)=R isa LA.Hermitian{<:Any,<:SparseMatrixCSC} ? LA.logabsdet(LA.cholesky(R)) : LA.logabsdet(R)
+function det_case(A,R,T,N,r)
+    L=Float64(O.logabsdet(A)[1])
+    c=isfinite(L) ? inv(real(T)(exp(L/N))) : one(real(T))
+    As=scale_mat(A,c); Rs=scale_mat(R,c)
+    (()->O.det(As), ()->ref_det(Rs), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,N),xr))
+end
+logabsdet_case(A,R,T,N,r)=(()->O.logabsdet(A), ()->ref_logabsdet(R),
     (xo,xr)->ref_or_missing(y->abs(xo[1]-y[1])<=rtol(T,N)*max(1,abs(y[1])) && isapprox(xo[2],y[2];rtol=0.01),xr))
 inv_case(A,R,T,N,r)=(()->O.inv(A), ()->LA.inv(R),
     (X,_)->LA.norm(R*X-LA.I)<=rtol(T,N)*fnorm(R)*fnorm(X))
@@ -133,7 +153,7 @@ function einsum3(A,R,T,d,r)
     (()->einsum("abc,cd->abd",X,Y), ()->(@tensor Z[a,b,e]:=X[a,b,c]*Y[c,e]), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,d),xr))
 end
 function einsum3_inplace(A,R,T,d,r)
-    X=rnd(r,T,d,d,d); Y=rnd(r,T,d,d); C=zeros(T,d,d,d); D=similar(C)
+    X=rnd(r,T,d,d,d); Y=rnd(r,T,d,d); C=zeros(T,d,d,d); D=zeros(T,d,d,d)
     P=plan_einsum("abc,cd->abd",X,Y); ws=EinsumWorkspace(T)
     (()->einsum!(C,P,X,Y;workspace=ws), ()->(@tensor D[a,b,e]=X[a,b,c]*Y[c,e]), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,d),xr))
 end
@@ -185,7 +205,7 @@ const OPS=[
     Op("schur_pencil","spectral","allocating",O.schur,[:dense],:spectral,schur_pencil),
     Op("hessenberg","spectral","allocating",O.hessenberg,[:dense,:hermitian],:spectral,hessenberg_case),
     # matrix functions and scalars
-    Op("det","functions","allocating",O.det,DET_KINDS,:cubic,scalar_case(O.det,LA.det)),
+    Op("det","functions","allocating",O.det,DET_KINDS,:cubic,det_case),
     Op("logabsdet","functions","allocating",O.logabsdet,DET_KINDS,:cubic,logabsdet_case),
     Op("inv","functions","allocating",O.inv,[:dense,:hermitian,:upper,:lower,:diagonal,:bidiagonal,:tridiagonal],:cubic,inv_case),
     Op("norm","functions","allocating",O.norm,[:dense,:hermitian,:tridiagonal,:sparse,:csr],:cubic,scalar_case(O.norm,LA.norm)),

@@ -65,7 +65,7 @@ function _ldl_schur!(F,f,j0,e,Wb,hermitian)
     F
 end
 
-function _mf_ldlt(A::NativeSparse,uplo,hermitian,pivot,ordering,maxwidth)
+function _mf_ldlt(A::NativeSparse,uplo,hermitian,pivot,ordering,maxwidth;check::Bool=true)
     n=_square(A); T=eltype(A); R=real(T); ident=collect(1:n)
     hermitian=hermitian && T<:Complex || T<:Real   # real symmetric = Hermitian
     lp,li,lv,_=_chol_permuted(A,uplo,ident,false,hermitian)
@@ -156,15 +156,17 @@ function _mf_ldlt(A::NativeSparse,uplo,hermitian,pivot,ordering,maxwidth)
             hermitian && (F[k,k]=T(real(F[k,k])))
             absakk=abs(F[k,k]); colmax=zero(R); imax=k
             for i in k+1:f
-                v=abs(F[i,k]); v>colmax && (colmax=v; imax=i)
+                v=abs(F[i,k]); isfinite(v) || throw(ArgumentError("sparse LDL arithmetic overflow"))
+                v>colmax && (colmax=v; imax=i)
             end
+            isfinite(absakk) || throw(ArgumentError("sparse LDL arithmetic overflow"))
             step=1; r=k
             if pivot===:none
-                iszero(absakk) && throw(SingularException(p[FR[k]]))
+                iszero(absakk) && (check || !iszero(colmax)) && throw(SingularException(p[FR[k]]))
             elseif absakk>=α*colmax && !iszero(absakk)
                 step=1
             elseif iszero(colmax)
-                throw(SingularException(p[FR[k]]))
+                check && throw(SingularException(p[FR[k]]))
             elseif imax>ncand && absakk>=_LDL_THRESHOLD*colmax && !iszero(absakk)
                 # The largest entry is outside the candidates: a 1×1 pivot
                 # passing the sparse threshold test (multipliers ≤ 1/u).
@@ -193,19 +195,23 @@ function _mf_ldlt(A::NativeSparse,uplo,hermitian,pivot,ordering,maxwidth)
                     _ldl_sym_swap!(F,f,k,r,hermitian); FR[k],FR[r]=FR[r],FR[k]; pos[FR[k]]=k; pos[FR[r]]=r
                 end
                 hermitian && (F[k,k]=T(real(F[k,k])))
-                d=F[k,k]; (iszero(d) || !isfinite(d)) && throw(SingularException(p[FR[k]]))
-                id=Base.inv(d)
-                for i in k+1:f
-                    Wb[i,k]=F[i,k]
-                end
-                for j in k+1:nfs
-                    c=_ldlconj(Wb[j,k],hermitian)*id
-                    @simd for i in j:f
-                        F[i,j]=muladd(-Wb[i,k],c,F[i,j])
+                d=F[k,k]; isfinite(d) || throw(ArgumentError("sparse LDL arithmetic overflow"))
+                if iszero(d)
+                    check && throw(SingularException(p[FR[k]]))
+                else
+                    id=Base.inv(d)
+                    for i in k+1:f
+                        Wb[i,k]=F[i,k]
                     end
-                end
-                @simd for i in k+1:f
-                    F[i,k]*=id
+                    for j in k+1:nfs
+                        c=_ldlconj(Wb[j,k],hermitian)*id
+                        @simd for i in j:f
+                            F[i,j]=muladd(-Wb[i,k],c,F[i,j])
+                        end
+                    end
+                    @simd for i in k+1:f
+                        F[i,k]*=id
+                    end
                 end
                 t+=1; order[t]=FR[k]; diagonal[t]=d; push!(blocks,1)
             else

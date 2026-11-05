@@ -76,6 +76,9 @@ _sp_tri_wrapper(A)=A isa _LA.UpperTriangular ? _LA.UpperTriangular : A isa _LA.U
 is read. The engine keeps its own copy of `A`.
 """
 factorize(A::_SpTriWrap)=(_LA.checksquare(A); LU(_sp_tri_engine(_sp_tri_wrapper(A),parent(A),_sp_tri_upper(A),_sp_tri_unit(A))))
+for f in (:det,:logdet,:logabsdet)
+    @eval $f(A::_SpTriWrap)=(_LA.checksquare(A); _LA.$f(factorize(A)))
+end
 
 # ---- OxiBLAS.ldiv / OxiBLAS.ldiv! ----------------------------------------------
 function ldiv end

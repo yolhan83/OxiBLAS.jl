@@ -116,6 +116,9 @@ const SUITESPARSE_FAMILIES=("factorizations","solves")
 const SUITESPARSE_OPS=("det","logabsdet")
 no_suitesparse(c)=(c.kind in SPARSE_KINDS || c.kind in BANDED_KINDS) && !(c.T in (Float64,ComplexF64)) &&
                   (c.op.family in SUITESPARSE_FAMILIES || c.op.name in SUITESPARSE_OPS)
+# LinearAlgebra.sylvester / lyap recurse infinitely in generic trsyl! without LAPACK.
+no_lapack_sylvester(c)=c.op.name in ("sylvester","lyap") && generic_type(c.T)
+chol_det_ref(c,R)=c.op.name in ("det","logabsdet") && R isa LA.Hermitian{<:Any,<:SparseMatrixCSC}
 
 blank(c,ref_label)=(;name=c.name,op=c.op.name,family=c.op.family,form=c.op.form,input=String(c.kind),ref_input=ref_label,
     eltype=eltype_label(c.T),size=c.size_label,order=c.kind===:tensor ? c.n : order(c.kind,c.n),status="",
@@ -124,6 +127,9 @@ blank(c,ref_label)=(;name=c.name,op=c.op.name,family=c.op.family,form=c.op.form,
 function run_case(c::Case,timing::Bool)
     r=rng(); T=c.T
     A,R,ref_label=c.kind===:tensor ? (nothing,nothing,"TensorOperations") : make_input(c.kind,T,c.n,r)
+    if chol_det_ref(c,R)
+        ref_label="cholesky(Hermitian{SparseMatrixCSC})"
+    end
     row=blank(c,ref_label)
     built=try
         c.op.build(A,R,T,row.order,r)
@@ -134,7 +140,7 @@ function run_case(c::Case,timing::Bool)
     # SuiteSparse (UMFPACK, CHOLMOD, SPQR) only handles Float64 and ComplexF64:
     # on other element types, LinearAlgebra falls back to generic dense code
     # on the sparse matrix, which does not finish at the larger sizes.
-    if no_suitesparse(c)
+    if no_suitesparse(c) || no_lapack_sylvester(c)
         ref0=nothing
     end
     xo=try oxi() catch e
@@ -142,9 +148,15 @@ function run_case(c::Case,timing::Bool)
     end
     note=""; xr=nothing; ref=ref0
     if ref===nothing
-        note=no_suitesparse(c) ? "no reference: SuiteSparse has no $(eltype_label(c.T))" : "no reference"
+        note=no_suitesparse(c) ? "no reference: SuiteSparse has no $(eltype_label(c.T))" :
+             no_lapack_sylvester(c) ? "no reference: LinearAlgebra.$(c.op.name) requires LAPACK trsyl!" : "no reference"
     else
-        try xr=ref() catch e; note="no reference: "*short(e); ref=nothing end
+        try
+            xr=ref()
+            if chol_det_ref(c,R)
+                note="ref: $(c.op.name)(cholesky(R)) (LA.$(c.op.name) densifies Hermitian{SparseMatrixCSC})"
+            end
+        catch e; note="no reference: "*short(e); ref=nothing end
     end
     ok=try check(xo,xr) catch e; note*=(isempty(note) ? "" : "; ")*"check: "*short(e); false end
     status=ok===missing ? "unchecked" : ok ? "ok" : "mismatch"

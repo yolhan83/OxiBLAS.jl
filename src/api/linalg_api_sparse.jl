@@ -29,7 +29,7 @@ end
 # ==== LU ========================================================================
 LU(E::MultifrontalLUFactor{T}) where T=LU{T,typeof(E)}(E)
 Base.size(F::LU{<:Any,<:MultifrontalLUFactor})=(n=length(_eng(F).p);(n,n))
-_LA.issuccess(F::LU{<:Any,<:MultifrontalLUFactor})=true   # the engine throws on a singular matrix
+_LA.issuccess(F::LU{<:Any,<:MultifrontalLUFactor})=(E=_eng(F); all(i->!iszero(E.U[i,i]),eachindex(E.p)))
 for (W,tr) in ((:LU,:(:N)),(:_AdjF,:(:C)),(:_TrF,:(:T)))
     S=W===:LU ? :(LU{T,<:MultifrontalLUFactor}) : :($W{<:Any,<:LU{T,<:MultifrontalLUFactor}})
     @eval function _LA.ldiv!(Fw::$S,B::AbstractVecOrMat) where T
@@ -53,22 +53,22 @@ SparseArrays.nnz(F::LU{<:Any,<:MultifrontalLUFactor})=length(_eng(F).L.values)+l
     OxiBLAS.lu(A::SparseMatrixCSC / CSRMatrix / ...; check=true) -> OxiBLAS.LU
 
 Sparse LU factorization with threshold pivoting (`multifrontal_lu`,
-`ordering=:auto`), giving `F.L*F.U == A[F.p,F.q]`. A singular matrix throws
-`SingularException` whatever the value of `check`: the engine has no
-failure state to return.
+`ordering=:auto`), giving `F.L*F.U == A[F.p,F.q]`. With `check=false`, a
+singular matrix returns a factor with a zero diagonal entry in `U` and
+`issuccess(F) == false`.
 """
-lu(A::_SpIn;check::Bool=true)=LU(multifrontal_lu(_sparse_input(A)))
+lu(A::_SpIn;check::Bool=true)=LU(multifrontal_lu(_sparse_input(A);check))
 lu(A::_SpAT;check::Bool=true)=lu(copy(A);check)
 lu(A::_SpHerm;check::Bool=true)=lu(_sparse_full(A);check)
 """
-    OxiBLAS.lu!(F::OxiBLAS.LU, A) -> F
+    OxiBLAS.lu!(F::OxiBLAS.LU, A; check=true) -> F
 
 Refactorizes `A` into `F`. The engine has no separate symbolic phase to
 reuse, so the analysis is redone.
 """
 function lu!(F::LU{T,<:MultifrontalLUFactor},A::_SpIn;check::Bool=true) where T
     size(A)==size(F) || throw(DimensionMismatch("new matrix has size $(size(A)), factorization has size $(size(F))"))
-    setfield!(F,:engine,multifrontal_lu(_mul_convert(T,A))); F
+    setfield!(F,:engine,multifrontal_lu(_mul_convert(T,A);check)); F
 end
 
 # ==== Cholesky ==================================================================
@@ -146,6 +146,14 @@ function cholesky!(F::Cholesky{T,<:MultifrontalCholeskyFactor},A::Union{_SpIn,_S
 end
 
 # ==== LDLᵀ and Bunch–Kaufman ====================================================
+function _LA.issuccess(F::Union{BunchKaufman{<:Any,<:SparseLDLFactor},LDLt{<:Any,<:SparseLDLFactor}})
+    E=_eng(F); k=1
+    @inbounds for step in E.blocks
+        step==1 && iszero(E.diagonal[k]) && return false
+        k+=step
+    end
+    true
+end
 _LA.logabsdet(F::Union{BunchKaufman{<:Any,<:SparseLDLFactor},LDLt{<:Any,<:SparseLDLFactor}})=logabsdet_factor(_eng(F))
 function _sp_ldl_tridiagonal(E::SparseLDLFactor{T}) where T
     n=length(E.diagonal); dl=zeros(T,max(n-1,0)); du=zeros(T,max(n-1,0)); k=1
@@ -169,19 +177,19 @@ Base.propertynames(F::Union{BunchKaufman{<:Any,<:SparseLDLFactor},LDLt{<:Any,<:S
     (:L,:D,:p,(private ? (:hermitian,:engine) : ())...)
 SparseArrays.nnz(F::Union{BunchKaufman{<:Any,<:SparseLDLFactor},LDLt{<:Any,<:SparseLDLFactor}})=length(_eng(F).L.values)
 
-function _sp_ldl(A,pivot,perm,shift::Number=0)
+function _sp_ldl(A,pivot,perm,shift::Number=0;check::Bool=true)
     _LA.checksquare(A); X,uplo,herm=_sp_kind(A)
-    sparse_ldlt(_sp_shift(X,shift);uplo,hermitian=herm,pivot,ordering=perm===nothing ? :amd : perm)
+    sparse_ldlt(_sp_shift(X,shift);uplo,hermitian=herm,pivot,ordering=perm===nothing ? :amd : perm,check)
 end
 const _SpSym=Union{_SpIn,_LA.Hermitian{<:Any,<:_SpIn},_LA.Symmetric{<:Any,<:_SpIn}}
 """
-    OxiBLAS.ldlt(A::sparse; perm=nothing, shift=0) -> OxiBLAS.LDLt
+    OxiBLAS.ldlt(A::sparse; check=true, perm=nothing, shift=0) -> OxiBLAS.LDLt
 
 Multifrontal LDLᵀ factorization without pivoting (`sparse_ldlt`,
 `pivot=:none`), with an AMD ordering or the permutation `perm` and optional
 diagonal shift `shift` (`A + shift*I`), as in CHOLMOD's `ldlt`.
 """
-ldlt(A::_SpSym;perm::Union{Nothing,AbstractVector{<:Integer}}=nothing,shift::Number=0)=LDLt(_sp_ldl(A,:none,perm,shift))
+ldlt(A::_SpSym;check::Bool=true,perm::Union{Nothing,AbstractVector{<:Integer}}=nothing,shift::Number=0)=LDLt(_sp_ldl(A,:none,perm,shift;check))
 """
     OxiBLAS.bunchkaufman(A::sparse, rook=false; check=true, perm=nothing) -> OxiBLAS.BunchKaufman
 
@@ -191,21 +199,21 @@ fill-reducing permutation vector (`nothing` uses AMD). Only `rook=false` is
 supported.
 """
 bunchkaufman(A::_SpSym,rook::Bool=false;check::Bool=true,perm::Union{Nothing,AbstractVector{<:Integer}}=nothing)=
-    (rook && throw(ArgumentError("rook pivoting is not available; use rook=false")); BunchKaufman(_sp_ldl(A,:bunchkaufman,perm)))
+    (rook && throw(ArgumentError("rook pivoting is not available; use rook=false")); BunchKaufman(_sp_ldl(A,:bunchkaufman,perm;check)))
 """
-    OxiBLAS.ldlt!(F, A; shift=0) -> F
-    OxiBLAS.bunchkaufman!(F, A) -> F
+    OxiBLAS.ldlt!(F, A; check=true, shift=0) -> F
+    OxiBLAS.bunchkaufman!(F, A; check=true) -> F
 
 Refactorizes `A` (or `A + shift*I` for `ldlt!`), which has the same pattern,
 into `F`, reusing the ordering `F.p`.
 """
-function ldlt!(F::LDLt{T,<:SparseLDLFactor},A::_SpSym;shift::Number=0) where T
+function ldlt!(F::LDLt{T,<:SparseLDLFactor},A::_SpSym;check::Bool=true,shift::Number=0) where T
     size(A)==size(F) || throw(DimensionMismatch("new matrix has size $(size(A)), factorization has size $(size(F))"))
-    setfield!(F,:engine,_sp_ldl(A,:none,_eng(F).p,shift)); F
+    setfield!(F,:engine,_sp_ldl(A,:none,_eng(F).p,shift;check)); F
 end
-function bunchkaufman!(F::BunchKaufman{T,<:SparseLDLFactor},A::_SpSym) where T
+function bunchkaufman!(F::BunchKaufman{T,<:SparseLDLFactor},A::_SpSym;check::Bool=true) where T
     size(A)==size(F) || throw(DimensionMismatch("new matrix has size $(size(A)), factorization has size $(size(F))"))
-    setfield!(F,:engine,_sp_ldl(A,:bunchkaufman,_eng(F).p)); F
+    setfield!(F,:engine,_sp_ldl(A,:bunchkaufman,_eng(F).p;check)); F
 end
 
 # ==== QR ========================================================================
@@ -295,7 +303,7 @@ SparseArrays' `factorize` and `\\`:
 - other square matrices: `LU`;
 - rectangular: `QRSparse` (it solves the tall case only).
 """
-function factorize(A::Union{_SpIn,_SpHerm})
+function factorize(A::Union{_SpIn,_SpHerm};check::Bool=true)
     m,n=size(A)
     m==n || return qr(A)
     if A isa _SpIn
@@ -308,15 +316,16 @@ function factorize(A::Union{_SpIn,_SpHerm})
         catch err
             err isa PosDefException || rethrow()
         end
-        return bunchkaufman(A isa _SpHerm ? A : _LA.Hermitian(A,:L))
+        return bunchkaufman(A isa _SpHerm ? A : _LA.Hermitian(A,:L);check)
     end
-    lu(A)
+    lu(A;check)
 end
-factorize(A::_SpAT)=factorize(copy(A))
-factorize(A::_LA.Symmetric{<:Complex,<:_SpIn})=(_LA.checksquare(A); bunchkaufman(A))
-det(A::Union{_SpIn,_SpAT,_SpHerm})=_LA.det(lu(A))
-logdet(A::Union{_SpIn,_SpAT,_SpHerm})=_LA.logdet(lu(A))
-logabsdet(A::Union{_SpIn,_SpAT,_SpHerm})=_LA.logabsdet(lu(A))
+factorize(A::_SpAT;check::Bool=true)=factorize(copy(A);check)
+factorize(A::_LA.Symmetric{<:Complex,<:_SpIn};check::Bool=true)=(_LA.checksquare(A); bunchkaufman(A;check))
+const _SpDetIn=Union{_SpIn,_SpAT,_SpHerm,_LA.Symmetric{<:Complex,<:_SpIn}}
+det(A::_SpDetIn)=(_LA.checksquare(A); _LA.det(factorize(A;check=false)))
+logdet(A::_SpDetIn)=(_LA.checksquare(A); _LA.logdet(factorize(A;check=false)))
+logabsdet(A::_SpDetIn)=(_LA.checksquare(A); _LA.logabsdet(factorize(A;check=false)))
 inv(A::Union{_SpIn,_SpAT,_SpHerm})=throw(ArgumentError("the inverse of a sparse matrix is usually dense; factorize it and solve with F \\ B instead"))
 function isposdef(A::Union{_SpIn,_SpHerm})
     size(A,1)==size(A,2) || return false
@@ -328,6 +337,29 @@ function isposdef(A::Union{_SpIn,_SpHerm})
         return false
     end
 end
+
+function norm(A::_SpIn,p::Real=2)
+    X=_sparse_input(A); R=real(eltype(X))
+    p==2 && return sparse_norm(X,:fro)
+    p==Inf && return sparse_norm(X,:max)
+    vals=X isa SparseMatrixCSC ? (SparseArrays.nonzeros(X),) : _mul_values(X)
+    p==1 && return sum(v->sum(abs,v;init=zero(R)),vals;init=zero(R))
+    p==0 && return R(sum(v->count(!iszero,v),vals;init=0))
+    if p==-Inf
+        nz=sum(v->count(!iszero,v),vals;init=0)
+        nz<length(X) && return zero(R)
+        return minimum(v->minimum(abs,v;init=R(Inf)),vals;init=R(Inf))
+    end
+    sum(v->sum(x->abs(x)^p,v;init=zero(R)),vals;init=zero(R))^inv(p)
+end
+norm(A::_SpAT,p::Real=2)=norm(parent(A),p)
+norm(A::Union{_SpHerm,_LA.Symmetric{<:Complex,<:_SpIn}},p::Real=2)=norm(_sparse_hermitian(_sparse_input(parent(A)),Symbol(A.uplo)),p)
+function opnorm(A::_SpIn,p::Real=2)
+    (p==1 || p==Inf) || throw(ArgumentError("sparse opnorm is available for p=1 or Inf only (got p=$p)"))
+    sparse_norm(_sparse_input(A),p==1 ? 1 : Inf)
+end
+opnorm(A::_SpAT,p::Real=2)=p==1 ? opnorm(parent(A),Inf) : p==Inf ? opnorm(parent(A),1) : opnorm(copy(A),p)
+opnorm(A::Union{_SpHerm,_LA.Symmetric{<:Complex,<:_SpIn}},p::Real=2)=opnorm(_sparse_hermitian(_sparse_input(parent(A)),Symbol(A.uplo)),p)
 
 # ==== LinearAlgebra extensions on OxiBLAS formats only ==========================
 # LinearAlgebra.lu(A::CSRMatrix) and similar forward to the OxiBLAS
@@ -345,9 +377,9 @@ _LA.ldlt!(F::LDLt{<:Any,<:SparseLDLFactor},A::_SpSym;kw...)=ldlt!(F,A;kw...)
 _LA.bunchkaufman(A::Union{_OxiSparse,_LA.Hermitian{<:Any,<:_OxiSparse},_LA.Symmetric{<:Any,<:_OxiSparse}},rook::Bool=false;kw...)=bunchkaufman(A,rook;kw...)
 _LA.qr(A::_OxiSparse;kw...)=qr(A;kw...)
 _LA.factorize(A::Union{_OxiSparse,_OxiHerm})=factorize(A)
-_LA.det(A::_OxiSparse)=det(A)
-_LA.logdet(A::_OxiSparse)=logdet(A)
-_LA.logabsdet(A::_OxiSparse)=logabsdet(A)
+_LA.det(A::Union{_OxiSparse,_OxiHerm})=det(A)
+_LA.logdet(A::Union{_OxiSparse,_OxiHerm})=logdet(A)
+_LA.logabsdet(A::Union{_OxiSparse,_OxiHerm})=logabsdet(A)
 
 # ==== SparseArrays utilities on the OxiBLAS formats =============================
 """

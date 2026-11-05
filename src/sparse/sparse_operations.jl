@@ -28,14 +28,43 @@ function sparse_norm(A::NativeSparse,kind=:fro)
         kind===:max && return maximum(v->maximum(abs,v;init=zero(R)),vals)
         return length(vals)==1 ? nrm2(vals[1]) : hypot(map(nrm2,vals)...)
     end
-    C=CSRMatrix(A)
     if kind in (:one,1)
-        sums=zeros(R,size(A,2))
-        for p in eachindex(C.values)
+        if A isa Union{SparseMatrixCSC,CSCMatrix}
+            cp=A isa SparseMatrixCSC ? SparseArrays.getcolptr(A) : A.colptr
+            vals=A isa SparseMatrixCSC ? SparseArrays.nonzeros(A) : A.values
+            mcol=zero(R)
+            @inbounds for j in 1:size(A,2)
+                s=zero(R)
+                for q in cp[j]:cp[j+1]-1; s+=abs(vals[q]); end
+                s>mcol && (mcol=s)
+            end
+            return mcol
+        end
+        C=A isa CSRMatrix ? A : CSRMatrix(A)
+        sums=zeros(R,size(C,2))
+        @inbounds for p in eachindex(C.values)
             sums[C.colind[p]]+=abs(C.values[p])
         end
         return maximum(sums;init=zero(R))
     elseif kind in (:inf,Inf)
+        if A isa CSRMatrix
+            mrow=zero(R)
+            @inbounds for i in 1:A.m
+                s=zero(R)
+                for q in A.rowptr[i]:A.rowptr[i+1]-1; s+=abs(A.values[q]); end
+                s>mrow && (mrow=s)
+            end
+            return mrow
+        elseif A isa Union{SparseMatrixCSC,CSCMatrix}
+            ri=A isa SparseMatrixCSC ? SparseArrays.rowvals(A) : A.rowind
+            vals=A isa SparseMatrixCSC ? SparseArrays.nonzeros(A) : A.values
+            sums=zeros(R,size(A,1))
+            @inbounds for p in eachindex(vals)
+                sums[ri[p]]+=abs(vals[p])
+            end
+            return maximum(sums;init=zero(R))
+        end
+        C=CSRMatrix(A)
         return maximum((sum(abs,view(C.values,C.rowptr[i]:C.rowptr[i+1]-1)) for i in 1:C.m);init=zero(R))
     end
     throw(ArgumentError("unsupported sparse norm"))
