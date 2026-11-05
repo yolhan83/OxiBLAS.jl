@@ -56,6 +56,39 @@ end
     (r/s)/z
 end
 
+# _small_solve(D,r;perturb=true) for a 2×2 block D=[d11 d12; d21 d22], in
+# scalars: same normalization s, complete pivoting (first largest entry in
+# column-major order, as _complete_pivot), the same perturbation of tiny
+# pivots, then L and U substitutions. Returns (x1, x2).
+@inline function _small_solve2(d11::C,d21::C,d12::C,d22::C,r1::C,r2::C) where {C}
+    R=real(C); s=max(abs(d11),abs(d21),abs(d12),abs(d22),one(R))
+    a11,a21,a12,a22=d11/s,d21/s,d12/s,d22/s; b1,b2=r1/s,r2/s
+    # Pivot position (p,q) and swaps bringing it to (1,1).
+    p=q=1; best=abs(a11)
+    abs(a21)>best && (p=2; q=1; best=abs(a21))
+    abs(a12)>best && (p=1; q=2; best=abs(a12))
+    abs(a22)>best && (p=2; q=2)
+    if p==2
+        a11,a21=a21,a11; a12,a22=a22,a12; b1,b2=b2,b1
+    end
+    if q==2
+        a11,a12=a12,a11; a21,a22=a22,a21
+    end
+    # Elimination (skipped on an exactly zero pivot, as lu_complete with
+    # check=false), then the perturbation of the factored diagonal.
+    l=a21; u22=a22
+    if !iszero(a11)
+        l=a21/a11; u22=a22-l*a12
+    end
+    floor=max(floatmin(R)/eps(R),eps(R))
+    u11=a11
+    abs(u11)<floor && (u11=iszero(u11) ? C(floor) : (u11/abs(u11))*floor)
+    abs(u22)<floor && (u22=iszero(u22) ? C(floor) : (u22/abs(u22))*floor)
+    y2=b2-l*b1
+    x2=y2/u22; x1=(b1-a12*x2)/u11
+    q==2 ? (x2,x1) : (x1,x2)
+end
+
 function _pencil_weights(a,b,sa,sb)
     R=real(typeof(a)); C=Complex{R}
     aa=a*sb; bb=b*sa; t=max(abs(aa),abs(bb))
@@ -74,18 +107,49 @@ function _pencil_weights(a,b,sa,sb)
     pa*exp(la-largest),pb*exp(lb-largest)
 end
 
+# w[1:hi] -= (ks·S[1:hi,j] - kb·B[1:hi,j])·xj: one contiguous column of S
+# (and B), as in LAPACK trevc.
+@inline function _trevc_update!(w,S,B,ordinary,ks,kb,j,hi,xj)
+    c=ks*xj
+    if ordinary
+        @inbounds @simd for i in 1:hi
+            w[i]=muladd(-S[i,j],c,w[i])
+        end
+    else
+        d=kb*xj
+        @inbounds @simd for i in 1:hi
+            w[i]=muladd(B[i,j],d,muladd(-S[i,j],c,w[i]))
+        end
+    end
+    w
+end
+
+# B === nothing: ordinary eigenvectors (B is the identity, never formed).
 function _pencil_vectors(S,B,alpha,beta;left=false)
-    _check_schur_form(S,B); n=size(S,1); R=real(eltype(S)); C=Complex{R}
+    ordinary=B===nothing
+    ordinary ? _check_schur_form(S) : _check_schur_form(S,B)
+    n=size(S,1); R=real(eltype(S)); C=Complex{R}
     length(alpha)==length(beta)==n || throw(DimensionMismatch("homogeneous pair dimensions differ"))
     blocks=_schur_blocks(S); X=zeros(C,n,n)
-    sa=_finite_scale(S); sb=_finite_scale(B)
+    sa=_finite_scale(S); sb=ordinary ? one(R) : _finite_scale(B)
+    Bij(i,j)=ordinary ? (i==j ? one(R) : zero(R)) : B[i,j]
+    # Right eigenvectors are computed column-oriented (w: pending right-hand
+    # sides); Schur blocks are 1×1 or 2×2, the general path stays for others.
+    columnwise=!left && maximum(length,blocks;init=0)<=2
+    w=columnwise ? Vector{C}(undef,n) : C[]
     for (index,block) in enumerate(blocks), col in block
         a,b=alpha[col],beta[col]
         iszero(a) && iszero(b) && throw(ArgumentError("indeterminate singular pencil has no unique eigenvectors"))
         # Normalize S/B separately before homogeneous combinations.
         aa,bb=_pencil_weights(a,b,sa,sb)
-        entry(i,j)=bb*_realdiv(C(S[i,j]),sa)-aa*_realdiv(C(B[i,j]),sb)
+        entry(i,j)=bb*_realdiv(C(S[i,j]),sa)-aa*_realdiv(C(Bij(i,j)),sb)
         m(i,j)=left ? conj(entry(j,i)) : entry(i,j)
+        # Off-diagonal entries for the O(n^3) substitution sums: the scale
+        # factors are formed once per column, and the B term vanishes for
+        # ordinary eigenvectors (two complex divisions per term before).
+        ks=bb/sa; kb=aa/sb
+        offentry(i,j)=ordinary ? ks*S[i,j] : ks*S[i,j]-kb*B[i,j]
+        off(i,j)=left ? conj(offentry(j,i)) : offentry(i,j)
         if length(block)==1
             X[first(block),col]=one(C)
         else
@@ -99,6 +163,47 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
             iszero(r) && (u=one(C); r=one(R))
             X[i,col]=u/r; X[j,col]=v/r
         end
+        if columnwise
+            # Same equations as the row-oriented loop below, summed in
+            # another order: after each solved block, w is updated by the
+            # columns of S above it (contiguous), and the column maximum is
+            # tracked instead of rescanned.
+            fill!(w,zero(C)); xmax=zero(R)
+            for j in block
+                xmax=max(xmax,abs(X[j,col]))
+                _trevc_update!(w,S,B,ordinary,ks,kb,j,first(block)-1,X[j,col])
+            end
+            for k in index-1:-1:1
+                rows=blocks[k]
+                if length(rows)==1
+                    row=first(rows); acc=w[row]
+                    if abs(acc)>0
+                        x1=_small_solve1(C(m(row,row)),acc)
+                        isfinite(x1) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                        X[row,col]=x1; xmax=max(xmax,abs(x1))
+                    end
+                else
+                    r1,r2=first(rows),last(rows); acc1,acc2=w[r1],w[r2]
+                    if max(abs(acc1),abs(acc2))>0
+                        x1,x2=_small_solve2(C(m(r1,r1)),C(m(r2,r1)),C(m(r1,r2)),C(m(r2,r2)),acc1,acc2)
+                        isfinite(x1) && isfinite(x2) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                        X[r1,col]=x1; X[r2,col]=x2; xmax=max(xmax,abs(x1),abs(x2))
+                    end
+                end
+                # Rescale the computed part and the pending right-hand sides
+                # (w is linear in x), preserving the equations.
+                if xmax>1
+                    for q in first(rows):last(block); X[q,col]/=xmax; end
+                    for q in 1:first(rows)-1; w[q]/=xmax; end
+                    xmax=one(R)
+                end
+                for j in rows
+                    xj=X[j,col]; iszero(xj) || _trevc_update!(w,S,B,ordinary,ks,kb,j,first(rows)-1,xj)
+                end
+            end
+            t=nrm2(view(X,:,col)); view(X,:,col)./=t
+            continue
+        end
         order=left ? (index+1:length(blocks)) : (index-1:-1:1)
         for k in order
             rows=blocks[k]
@@ -109,7 +214,7 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
                 # (New names: r and i of the enclosing loop hold other values.)
                 row=first(rows); acc=zero(C)
                 for j in known
-                    acc-=m(row,j)*X[j,col]
+                    acc-=off(row,j)*X[j,col]
                 end
                 if abs(acc)>0
                     x1=_small_solve1(C(m(row,row)),acc)
@@ -119,9 +224,24 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
                 end
                 continue
             end
+            if length(rows)==2
+                # 2×2 block (a complex pair of a real Schur form): scalar
+                # form of the general path below, without its small arrays.
+                r1,r2=first(rows),last(rows); acc1=zero(C); acc2=zero(C)
+                for j in known
+                    xj=X[j,col]; acc1-=off(r1,j)*xj; acc2-=off(r2,j)*xj
+                end
+                if max(abs(acc1),abs(acc2))>0
+                    x1,x2=_small_solve2(C(m(r1,r1)),C(m(r2,r1)),C(m(r1,r2)),C(m(r2,r2)),acc1,acc2)
+                    isfinite(x1) && isfinite(x2) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                    X[r1,col]=x1; X[r2,col]=x2
+                    t=maximum(abs,view(X,:,col)); t>1 && (view(X,:,col)./=t)
+                end
+                continue
+            end
             D=C[m(i,j) for i in rows,j in rows]; rhs=zeros(C,length(rows))
             for (ii,i) in enumerate(rows), j in known
-                rhs[ii]-=m(i,j)*X[j,col]
+                rhs[ii]-=off(i,j)*X[j,col]
             end
             if maximum(abs,rhs;init=zero(R))>0
                 y=_small_solve(D,rhs;perturb=true)
@@ -139,7 +259,7 @@ end
 function _ordinary_vectors(S;left=false)
     _check_schur_form(S); C=Complex{real(eltype(S))}; n=size(S,1)
     values=_schur_values(S,one(real(eltype(S))))
-    _pencil_vectors(S,_identity(eltype(S),n),C.(values),ones(C,n);left)
+    _pencil_vectors(S,nothing,C.(values),ones(C,n);left)
 end
 
 """Native block TREVC. Real input stores a conjugate pair as real/imaginary

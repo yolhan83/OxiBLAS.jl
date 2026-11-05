@@ -42,13 +42,13 @@ struct ELLMatrix{T} <: SparseArrays.AbstractSparseMatrix{T,Int}
         Base.require_one_based_indexing(indices,values)
         min(m,n)>=0 && size(indices)==size(values) && size(indices,1)==m || throw(DimensionMismatch("invalid ELL dimensions"))
         jj=Matrix{Int}(indices); vv=zeros(T,size(values))
+        mark=zeros(Int,n)   # mark[j]==i: column j already seen in row i (no Set per row)
         for i in 1:m
-            seen=Set{Int}()
             for k in axes(indices,2)
                 j=jj[i,k]; 0<=j<=n || throw(ArgumentError("ELL column out of range"))
                 iszero(j) && continue
-                j in seen && throw(ArgumentError("duplicate ELL entry"))
-                push!(seen,j); vv[i,k]=values[i,k]
+                mark[j]==i && throw(ArgumentError("duplicate ELL entry"))
+                mark[j]=i; vv[i,k]=values[i,k]
             end
         end
         new{T}(m,n,jj,vv)
@@ -182,16 +182,17 @@ struct SELLMatrix{T} <: SparseArrays.AbstractSparseMatrix{T,Int}
         ptr[1]==1 && ptr[end]==length(values)+1 && issorted(ptr) && all(>=(0),widths) || throw(ArgumentError("invalid SELL slice pointers"))
         sort(collect(permutation))==collect(1:m) || throw(ArgumentError("invalid SELL row permutation"))
         jj=zeros(Int,length(indices)); vv=zeros(T,length(values))
+        mark=zeros(Int,n); row=0   # mark[j]==row: column j already seen in this row
         for slice in 1:slices
             ptr[slice+1]-ptr[slice]==height*widths[slice] || throw(DimensionMismatch("SELL slice extent differs"))
             for lane in 1:min(height,m-(slice-1)*height)
-                seen=Set{Int}()
+                row+=1
                 for k in 1:widths[slice]
                     p=ptr[slice]+(k-1)*height+lane-1; j=indices[p]
                     0<=j<=n || throw(ArgumentError("SELL column out of range"))
                     j==0 && continue
-                    j in seen && throw(ArgumentError("duplicate SELL row entry"))
-                    push!(seen,j); jj[p]=j; vv[p]=values[p]
+                    mark[j]==row && throw(ArgumentError("duplicate SELL row entry"))
+                    mark[j]=row; jj[p]=j; vv[p]=values[p]
                 end
             end
         end

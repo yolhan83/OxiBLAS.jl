@@ -22,7 +22,15 @@ end
 _symmetric_cost(::Type{T}) where T=(T<:Complex ? 4 : 2)*sizeof(T)
 function gemv!(y::AbstractVector{T},A::AbstractMatrix{T},x::AbstractVector{T},α0=one(T),β0=zero(T);trans=:N,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
-    AA=_op(A,trans)
+    # One method per operand type: _op(A,trans) is a Union (A, transpose,
+    # adjoint), and a union-typed operand captured by the task closures
+    # below was boxed at every call.
+    kind=_trans_kind(trans)
+    kind==0 && return _gemv_op!(y,A,x,α0,β0,threaded,parallel_threshold)
+    kind==1 && return _gemv_op!(y,transpose(A),x,α0,β0,threaded,parallel_threshold)
+    _gemv_op!(y,adjoint(A),x,α0,β0,threaded,parallel_threshold)
+end
+function _gemv_op!(y::AbstractVector{T},AA,x,α0,β0,threaded,parallel_threshold) where T
     Base.require_one_based_indexing(y,AA,x)
     size(AA)==(length(y),length(x)) || throw(DimensionMismatch("GEMV dimensions differ"))
     _check_vector_output(y)
@@ -30,8 +38,12 @@ function gemv!(y::AbstractVector{T},A::AbstractMatrix{T},x::AbstractVector{T},α
     workers=_l2_workers(T,length(y),work,sizeof(T)*work,threaded,parallel_threshold)
     α,β=convert(T,α0),convert(T,β0)
     (iszero(α) || isempty(x)) && return _scale!(y,β)
-    aa=Base.mightalias(y,AA) ? copy(AA) : AA
-    xx=Base.mightalias(y,x) ? copy(x) : x
+    # Snapshots of aliased operands are taken before y is scaled.
+    ca,cx=Base.mightalias(y,AA),Base.mightalias(y,x)
+    ca ? (cx ? _gemv_run!(y,copy(AA),copy(x),α,β,workers) : _gemv_run!(y,copy(AA),x,α,β,workers)) :
+         (cx ? _gemv_run!(y,AA,copy(x),α,β,workers) : _gemv_run!(y,AA,x,α,β,workers))
+end
+function _gemv_run!(y::AbstractVector{T},aa,xx,α,β,workers) where T
     _scale!(y,β)
     if aa isa Union{Transpose,Adjoint} && _column_preferred(parent(aa))
         _l1_foreach(length(y),workers) do rows,_
@@ -262,8 +274,13 @@ function _rank12!(A,x,y,α,uplo,hermitian,rank2)
         end
         return A
     end
-    xx=Base.mightalias(A,x) ? copy(x) : x
-    yy=Base.mightalias(A,y) ? copy(y) : y
+    # Barrier: the kernel gets concrete operand types (a Union-typed
+    # operand cost allocations at every call).
+    cx,cy=Base.mightalias(A,x),Base.mightalias(A,y)
+    cx ? (cy ? _rank12_kernel!(A,copy(x),copy(y),α,n,upper,hermitian,rank2) : _rank12_kernel!(A,copy(x),y,α,n,upper,hermitian,rank2)) :
+         (cy ? _rank12_kernel!(A,x,copy(y),α,n,upper,hermitian,rank2) : _rank12_kernel!(A,x,y,α,n,upper,hermitian,rank2))
+end
+function _rank12_kernel!(A,xx,yy,α,n,upper,hermitian,rank2)
     # Column form: per stored column j the coefficients are formed once and
     # the update is a contiguous fused AXPY (two for rank 2). A Hermitian
     # diagonal keeps real(old)+real(update), i.e. the real part of the sum.

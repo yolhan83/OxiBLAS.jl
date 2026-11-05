@@ -93,9 +93,7 @@ function _check_nd_output(C)
             span=Base.checked_add(span,Base.checked_mul(size(C,d)-1,abs(stride(C,d))))
         end
     elseif C isa SubArray
-        for idx in parentindices(C)
-            idx isa AbstractVector && !allunique(idx) && throw(ArgumentError("output view contains repeated indices"))
-        end
+        _views_unique(parentindices(C)) || throw(ArgumentError("output view contains repeated indices"))
         _check_nd_output(parent(C))
     elseif C isa Union{Transpose,Adjoint,Base.PermutedDimsArray,Base.ReshapedArray}
         _check_nd_output(parent(C))

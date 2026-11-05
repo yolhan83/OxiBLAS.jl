@@ -168,9 +168,10 @@ function _check_output_layout(C::AbstractMatrix)
             m>s2÷g && n>s1÷g && throw(ArgumentError("output entries overlap"))
         end
     elseif C isa SubArray
-        for idx in parentindices(C)
-            idx isa AbstractVector && !allunique(idx) && throw(ArgumentError("output view contains repeated indices"))
-        end
+        # Recursion over the index tuple, not a loop: the tuple is
+        # heterogeneous (ranges and integers) and a loop variable over it
+        # was boxed (one allocation per Level 1 call on a view).
+        _views_unique(parentindices(C)) || throw(ArgumentError("output view contains repeated indices"))
     elseif C isa Union{Transpose,Adjoint}
         _check_output_layout(parent(C))
     elseif C isa Union{Base.ReshapedArray,Base.PermutedDimsArray}
@@ -195,6 +196,18 @@ function _block(A::SubArray{<:Any,2,<:Any,<:Tuple{AbstractUnitRange,AbstractUnit
     b=_block(parent(A)); b===nothing && return nothing
     base,r,c,flip=b; I,J=parentindices(A)
     flip ? (base,r[J],c[I],true) : (base,r[I],c[J],false)
+end
+# Column segment A[I, j] and row segment A[i, J] of a matrix (Level 1 kernels
+# on two columns of one matrix, as in Householder QR updates).
+function _block(A::SubArray{<:Any,1,<:Any,<:Tuple{AbstractUnitRange,Integer}})
+    b=_block(parent(A)); b===nothing && return nothing
+    base,r,c,flip=b; I,j=parentindices(A)
+    flip ? (base,r[j:j],c[I],true) : (base,r[I],c[j:j],false)
+end
+function _block(A::SubArray{<:Any,1,<:Any,<:Tuple{Integer,AbstractUnitRange}})
+    b=_block(parent(A)); b===nothing && return nothing
+    base,r,c,flip=b; i,J=parentindices(A)
+    flip ? (base,r[J],c[i:i],true) : (base,r[i:i],c[J],false)
 end
 _block(A)=nothing
 function _mightalias(A,B)
@@ -537,7 +550,15 @@ function gemm!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},
                α0=1,β0=0; transA=:N,transB=:N,algorithm=:auto,kernel=:auto,
                threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
     isconcretetype(T) || throw(ArgumentError("a concrete native scalar type is required"))
-    Aop,Bop=_op(A,transA),_op(B,transB)
+    # Concrete operand types for the usual untransposed call: _op returns a
+    # Union (A, transpose, adjoint) and union-typed operands captured by the
+    # closures below were boxed at every call.
+    if _trans_kind(transA)==0 && _trans_kind(transB)==0
+        return _gemm_ops!(C,A,B,α0,β0,algorithm,kernel,threaded,workspace,config)
+    end
+    _gemm_ops!(C,_op(A,transA),_op(B,transB),α0,β0,algorithm,kernel,threaded,workspace,config)
+end
+function _gemm_ops!(C::AbstractMatrix{T},Aop,Bop,α0,β0,algorithm,kernel,threaded,workspace,config) where T
     m,n,k=_gemm_dims(C,Aop,Bop)
     α,β=convert(T,α0),convert(T,β0)
     algorithm in (:auto,:reference,:blocked,:packed,:register,:simd) || throw(ArgumentError("unknown algorithm $algorithm"))
@@ -546,8 +567,15 @@ function gemm!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},
     if iszero(α) || k==0
         return _unpacked_workspace(()->_scale!(C,β),workspace,T,C,Aop,Bop)
     end
-    AA=_mightalias(C,Aop) ? copy(Aop) : Aop
-    BB=_mightalias(C,Bop) ? copy(Bop) : Bop
+    # Snapshots of operands overlapping C, through a barrier (no
+    # union-typed operand in the closures of _gemm_run!).
+    ca,cb=_mightalias(C,Aop),_mightalias(C,Bop)
+    ca ? (cb ? _gemm_run!(C,copy(Aop),copy(Bop),α,β,m,n,k,algorithm,kind,threaded,workspace,config) :
+               _gemm_run!(C,copy(Aop),Bop,α,β,m,n,k,algorithm,kind,threaded,workspace,config)) :
+         (cb ? _gemm_run!(C,Aop,copy(Bop),α,β,m,n,k,algorithm,kind,threaded,workspace,config) :
+               _gemm_run!(C,Aop,Bop,α,β,m,n,k,algorithm,kind,threaded,workspace,config))
+end
+function _gemm_run!(C::AbstractMatrix{T},AA,BB,α,β,m,n,k,algorithm,kind,threaded,workspace,config) where T
     small=config.small_threshold>0 && max(m,n)<=config.small_threshold && k<=512
     method=algorithm===:auto ? (small ? :small : :simd) : algorithm
     method===:small && return _unpacked_workspace(()->_small_gemm!(C,AA,BB,α,β),workspace,T,C,AA,BB)

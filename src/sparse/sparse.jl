@@ -18,12 +18,20 @@ struct CSRMatrix{T,I<:Integer} <: SparseArrays.AbstractSparseMatrix{T,I}
         length(rowptr)==m+1 && length(colind)==length(values) || throw(DimensionMismatch("invalid CSR array lengths"))
         rowptr[1]==1 && rowptr[end]==length(values)+1 || throw(ArgumentError("invalid CSR endpoints"))
         issorted(rowptr) || throw(ArgumentError("CSR row pointers must be monotonic"))
+        # Duplicate check without a Set per row (6-8 allocations each): a row
+        # with strictly increasing columns, the usual case, has no duplicate;
+        # the other rows share one marker array, allocated at the first one.
+        mark=nothing
         for i in 1:m
-            seen=Set{I}()
-            for p in rowptr[i]:rowptr[i+1]-1
+            lo,hi=rowptr[i],rowptr[i+1]-1; increasing=true
+            for p in lo:hi
                 1<=colind[p]<=n || throw(ArgumentError("CSR column out of range"))
-                colind[p] in seen && throw(ArgumentError("duplicate CSR entry"))
-                push!(seen,colind[p])
+                p>lo && colind[p]<=colind[p-1] && (increasing=false)
+            end
+            increasing && continue
+            mark===nothing && (mark=zeros(Int,n))
+            for p in lo:hi
+                j=Int(colind[p]); mark[j]==i && throw(ArgumentError("duplicate CSR entry")); mark[j]=i
             end
         end
         new{T,I}(m,n,copy(rowptr),copy(colind),copy(values))

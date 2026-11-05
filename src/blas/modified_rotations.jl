@@ -29,13 +29,16 @@ function RotmParams(p::AbstractVector{T}) where {T<:AbstractFloat}
     throw(ArgumentError("ROTM flag must be -2, -1, 0 or 1"))
 end
 
+_views_unique(::Tuple{})=true
+_views_unique(t::Tuple)=!(first(t) isa AbstractVector && !allunique(first(t))) && _views_unique(Base.tail(t))
 function _check_vector_output(x)
     if x isa StridedVector
         length(x)>1 && stride(x,1)==0 && throw(ArgumentError("output entries overlap"))
     elseif x isa SubArray
-        for idx in parentindices(x)
-            idx isa AbstractVector && !allunique(idx) && throw(ArgumentError("output view contains repeated indices"))
-        end
+        # Recursion over the index tuple, not a loop: the tuple is
+        # heterogeneous (ranges and integers) and a loop variable over it
+        # was boxed (one allocation per Level 1 call on a view).
+        _views_unique(parentindices(x)) || throw(ArgumentError("output view contains repeated indices"))
         _check_nd_output(parent(x))
     elseif x isa Union{Base.ReshapedArray,Base.PermutedDimsArray}
         _check_nd_output(x)

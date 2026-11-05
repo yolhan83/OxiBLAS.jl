@@ -10,9 +10,15 @@ end
 function axpy!(y::AbstractVector,x::AbstractVector,α=one(eltype(y)))
     _same_length(x,y);_check_vector_output(y)
     iszero(α) && return y
-    xx=Base.mightalias(x,y) && x!==y ? copy(x) : x
+    # _mightalias: two disjoint column segments of one matrix do not alias
+    # (Base.mightalias said they might, and x was copied at every call).
+    # One kernel call per branch: a Union{copy, view} variable cost an
+    # allocation per call.
+    _mightalias(x,y) && x!==y ? _axpy_kernel!(y,copy(x),α) : _axpy_kernel!(y,x,α)
+end
+function _axpy_kernel!(y,x,α)
     @inbounds @simd for i in eachindex(y)
-        y[i]=_arithmetic_madd(α,xx[i],y[i])
+        y[i]=_arithmetic_madd(α,x[i],y[i])
     end
     y
 end
