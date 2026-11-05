@@ -56,6 +56,39 @@ end
     (r/s)/z
 end
 
+# _small_solve(D,r;perturb=true) for a 2×2 block D=[d11 d12; d21 d22], in
+# scalars: same normalization s, complete pivoting (first largest entry in
+# column-major order, as _complete_pivot), the same perturbation of tiny
+# pivots, then L and U substitutions. Returns (x1, x2).
+@inline function _small_solve2(d11::C,d21::C,d12::C,d22::C,r1::C,r2::C) where {C}
+    R=real(C); s=max(abs(d11),abs(d21),abs(d12),abs(d22),one(R))
+    a11,a21,a12,a22=d11/s,d21/s,d12/s,d22/s; b1,b2=r1/s,r2/s
+    # Pivot position (p,q) and swaps bringing it to (1,1).
+    p=q=1; best=abs(a11)
+    abs(a21)>best && (p=2; q=1; best=abs(a21))
+    abs(a12)>best && (p=1; q=2; best=abs(a12))
+    abs(a22)>best && (p=2; q=2)
+    if p==2
+        a11,a21=a21,a11; a12,a22=a22,a12; b1,b2=b2,b1
+    end
+    if q==2
+        a11,a12=a12,a11; a21,a22=a22,a21
+    end
+    # Elimination (skipped on an exactly zero pivot, as lu_complete with
+    # check=false), then the perturbation of the factored diagonal.
+    l=a21; u22=a22
+    if !iszero(a11)
+        l=a21/a11; u22=a22-l*a12
+    end
+    floor=max(floatmin(R)/eps(R),eps(R))
+    u11=a11
+    abs(u11)<floor && (u11=iszero(u11) ? C(floor) : (u11/abs(u11))*floor)
+    abs(u22)<floor && (u22=iszero(u22) ? C(floor) : (u22/abs(u22))*floor)
+    y2=b2-l*b1
+    x2=y2/u22; x1=(b1-a12*x2)/u11
+    q==2 ? (x2,x1) : (x1,x2)
+end
+
 function _pencil_weights(a,b,sa,sb)
     R=real(typeof(a)); C=Complex{R}
     aa=a*sb; bb=b*sa; t=max(abs(aa),abs(bb))
@@ -115,6 +148,21 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
                     x1=_small_solve1(C(m(row,row)),acc)
                     isfinite(x1) || throw(OverflowError("Schur eigenvector substitution overflow"))
                     X[row,col]=x1
+                    t=maximum(abs,view(X,:,col)); t>1 && (view(X,:,col)./=t)
+                end
+                continue
+            end
+            if length(rows)==2
+                # 2×2 block (a complex pair of a real Schur form): scalar
+                # form of the general path below, without its small arrays.
+                r1,r2=first(rows),last(rows); acc1=zero(C); acc2=zero(C)
+                for j in known
+                    xj=X[j,col]; acc1-=m(r1,j)*xj; acc2-=m(r2,j)*xj
+                end
+                if max(abs(acc1),abs(acc2))>0
+                    x1,x2=_small_solve2(C(m(r1,r1)),C(m(r2,r1)),C(m(r1,r2)),C(m(r2,r2)),acc1,acc2)
+                    isfinite(x1) && isfinite(x2) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                    X[r1,col]=x1; X[r2,col]=x2
                     t=maximum(abs,view(X,:,col)); t>1 && (view(X,:,col)./=t)
                 end
                 continue
