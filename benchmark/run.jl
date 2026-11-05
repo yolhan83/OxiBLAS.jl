@@ -1,22 +1,40 @@
-# High-level benchmark suite: the operations users call, against the matching
-# reference (OpenBLAS or Accelerate through LinearAlgebra, SparseArrays'
-# UMFPACK/CHOLMOD, TensorOperations).
+# High-level benchmark suite: every high-level operation, on every input type
+# it accepts (LinearAlgebra and OxiBLAS types), for Float16, Float32, Float64,
+# ComplexF32, ComplexF64 and BigFloat, at three sizes; against the matching
+# reference (LinearAlgebra with OpenBLAS or Accelerate, or its generic code
+# for Float16/BigFloat; SparseArrays' UMFPACK/CHOLMOD/SPQR; TensorOperations).
 #
 #   julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-#   julia --project=benchmark --threads=1 benchmark/run.jl              # every case
-#   julia --project=benchmark --threads=1 benchmark/run.jl gemm lu      # names starting with gemm or lu
-#   OXIBLAS_REFERENCE=accelerate julia --project=benchmark benchmark/run.jl   # macOS
+#   julia --project=benchmark --threads=1 benchmark/run.jl                      # whole grid
+#   julia --project=benchmark --threads=1 benchmark/run.jl lu cholesky          # names starting with lu or cholesky
+#   julia --project=benchmark --threads=1 benchmark/run.jl 'ldiv!/*/f64/*'      # glob on op/input/type/size
+#   julia --project=benchmark benchmark/run.jl --types=f32,f64 --sizes=s,m --families=solves --inputs=csr,dense
+#   julia --project=benchmark benchmark/run.jl --allocs                         # allocation campaign only (no timing)
+#   julia --project=benchmark benchmark/run.jl --list                           # print the selected case names
+#   OXIBLAS_REFERENCE=accelerate julia --project=benchmark benchmark/run.jl     # macOS
+#
+# Case names are op/input/type/size, e.g. lu/csr/f64/m. Sizes s, m, l depend
+# on the input kind and the element type (benchmark/suite/inputs.jl).
 #
 # Method:
-#   - same problem, same data and same thread count for both sides (the
-#     reference BLAS gets Threads.nthreads() threads);
-#   - each result is checked against the reference before timing;
-#   - allocating and in-place forms are separate cases (column `form`);
-#   - one warm-up call compiles; times are medians of warm samples (Chairmarks);
-#   - only the selected cases are compiled: each case is its own function,
-#     called through invokelatest.
-# Output: benchmark/results/<stamp>.csv and .md (time, bytes, ratio).
-using OxiBLAS, Chairmarks, SparseArrays, Random, Printf, Dates
+#   - same data and same thread count for both sides (the reference BLAS gets
+#     Threads.nthreads() threads);
+#   - one warm-up call each compiles; the OxiBLAS result is then checked (the
+#     check does not need the reference, so it also runs when there is none);
+#   - allocations: count and bytes of one warm call (Base.@allocations,
+#     Base.@allocated), for both sides;
+#   - times: median of warm samples (Chairmarks), OXIBLAS_BENCH_SECONDS each;
+#   - only the selected cases are built and compiled (invokelatest per case).
+# Status of each case:
+#   ok            checked and timed;
+#   unchecked     timed, nothing could validate the result (no reference);
+#   unsupported   OxiBLAS has no method for this input (MethodError on its API);
+#   mismatch      the check failed;
+#   error         OxiBLAS raised another exception (message in `note`).
+# A missing reference (LinearAlgebra has no method, or no BLAS/LAPACK for the
+# type) leaves the reference columns empty with the reason in `note`.
+# Output: benchmark/results/<stamp>.csv and .md.
+using OxiBLAS, Chairmarks, SparseArrays, Random, Printf, Dates, Statistics
 import LinearAlgebra as LA
 const REFERENCE=get(ENV,"OXIBLAS_REFERENCE","openblas")
 if REFERENCE=="accelerate"
@@ -28,179 +46,201 @@ LA.BLAS.set_num_threads(Threads.nthreads())
 const SECONDS=parse(Float64,get(ENV,"OXIBLAS_BENCH_SECONDS","0.5"))
 const O=OxiBLAS
 
+include(joinpath(@__DIR__,"suite","inputs.jl"))
+include(joinpath(@__DIR__,"suite","operations.jl"))
+
 struct Case
-    name::String       # unique, used for selection
-    family::String
-    form::String       # "allocating" or "in-place"
-    run::Function      # () -> (oxiblas closure, reference closure, check)
+    name::String
+    op::Op
+    kind::Symbol
+    T::Type
+    size_label::String
+    n::Int                # size parameter (order, grid side or tensor extent)
 end
-relerr(x,y)=LA.norm(x-y)/max(LA.norm(y),floatmin(real(eltype(y))))
-tolfor(T)=real(T)===Float32 ? 1f-3 : 1e-8
-rng()=Xoshiro(20261104)
-lap2d(k;c=0.0)=(e=ones(k); T=spdiagm(-1=>-e[2:end],0=>2e,1=>-e[2:end]); C=spdiagm(-1=>-e[2:end],1=>e[2:end]);
-                I=sparse(1.0LA.I,k,k); kron(I,T)+kron(T,I)+c*(kron(I,C)+kron(C,I)))
-spd(r,T,n)=(X=randn(r,T,n,n); LA.Hermitian(X*X'+n*LA.I))
-
-# Each builder returns (oxi, ref, check): oxi and ref are zero-argument
-# closures over the same data; check(xo, xr) validates the two results.
-approx(T)=(a,b)->relerr(a,b)<=tolfor(T)*100
-gemm_case(T,n)=() -> begin
-    r=rng(); A=randn(r,T,n,n); B=randn(r,T,n,n); C=zeros(T,n,n); D=zeros(T,n,n)
-    w=GemmWorkspace(T,n,n,n)
-    (()->gemm!(C,A,B;workspace=w), ()->LA.mul!(D,A,B), approx(T))
-end
-mul_sparse_dense() = () -> begin
-    S=lap2d(100;c=0.3); A=CSRMatrix(S); X=randn(rng(),size(S,2),16); Y=zeros(size(S,1),16); Z=similar(Y)
-    (()->O.mul!(Y,A,X), ()->LA.mul!(Z,S,X), approx(Float64))
-end
-mul_sparse_sparse() = () -> begin
-    S=lap2d(100;c=0.3); A=CSRMatrix(S)
-    (()->O.mul(A,A), ()->S*S, (a,b)->relerr(Matrix(SparseMatrixCSC(a)),Matrix(b))<=1e-12)
-end
-syrk_case(n) = () -> begin
-    A=randn(rng(),n,n); C=zeros(n,n); D=zeros(n,n)
-    (()->syrk!(C,A), ()->LA.BLAS.syrk!('U','N',1.0,A,0.0,D), (a,b)->relerr(LA.triu(a),LA.triu(b))<=1e-10)
-end
-trsm_case(n) = () -> begin
-    r=rng(); U=LA.triu(randn(r,n,n))+n*LA.I; B=randn(r,n,n); X=copy(B); Y=copy(B)
-    (()->(copyto!(X,B); trsm!(X,U)), ()->(copyto!(Y,B); LA.BLAS.trsm!('L','U','N','N',1.0,U,Y)), approx(Float64))
-end
-lu_case(T,n) = () -> begin
-    A=randn(rng(),T,n,n)+n*LA.I; b=randn(rng(),T,n)
-    (()->O.lu(A), ()->LA.lu(A), (Fo,Fr)->relerr(Fo\b,Fr\b)<=tolfor(T)*100)
-end
-cholesky_case(T,n) = () -> begin
-    H=spd(rng(),T,n); b=randn(rng(),T,n)
-    (()->O.cholesky(H), ()->LA.cholesky(H), (Fo,Fr)->relerr(Fo\b,Fr\b)<=tolfor(T)*100)
-end
-qr_case(T,m,n) = () -> begin
-    A=randn(rng(),T,m,n); b=randn(rng(),T,m)
-    (()->O.qr(A), ()->LA.qr(A), (Fo,Fr)->relerr(Fo\b,Fr\b)<=tolfor(T)*100)
-end
-svd_case(T,n;algorithm) = () -> begin
-    A=randn(rng(),T,n,n)
-    (()->svd_factor(A;algorithm,threaded=Threads.nthreads()>1), ()->LA.svd(A),
-     (Fo,Fr)->relerr(Fo.S,Fr.S)<=tolfor(T)*100)
-end
-eigen_case(T,n) = () -> begin
-    H=spd(rng(),T,n)
-    (()->O.eigen(H), ()->LA.eigen(H), (Eo,Er)->relerr(Eo.values,Er.values)<=tolfor(T)*100)
-end
-dense_solve_alloc(n) = () -> begin
-    A=randn(rng(),n,n)+n*LA.I; B=randn(rng(),n,8)
-    (()->O.ldiv(A,B), ()->A\B, approx(Float64))
-end
-dense_solve_inplace(n) = () -> begin
-    A=randn(rng(),n,n)+n*LA.I; B=randn(rng(),n,8); Fo=O.lu(A); Fr=LA.lu(A); Y=similar(B); Z=similar(B)
-    (()->O.ldiv!(Y,Fo,B), ()->LA.ldiv!(Z,Fr,B), approx(Float64))
-end
-sparse_backslash(;c) = () -> begin
-    S=lap2d(100;c); A=CSRMatrix(S); b=randn(rng(),size(S,1))
-    (()->A\b, ()->S\b, approx(Float64))
-end
-sparse_lu() = () -> begin
-    S=lap2d(100;c=0.3); A=CSRMatrix(S); b=randn(rng(),size(S,1))
-    (()->O.lu(A), ()->LA.lu(S), (Fo,Fr)->relerr(Fo\b,Fr\b)<=1e-8)
-end
-sparse_cholesky() = () -> begin
-    S=lap2d(100); A=CSRMatrix(S); b=randn(rng(),size(S,1))
-    (()->O.cholesky(LA.Hermitian(A)), ()->LA.cholesky(LA.Hermitian(S)), (Fo,Fr)->relerr(Fo\b,Fr\b)<=1e-8)
-end
-sparse_ldiv_inplace() = () -> begin
-    S=lap2d(100;c=0.3); A=CSRMatrix(S); b=randn(rng(),size(S,1)); Fo=O.lu(A); Fr=LA.lu(S); y=similar(b); z=similar(b)
-    (()->O.ldiv!(y,Fo,b), ()->LA.ldiv!(z,Fr,b), approx(Float64))
-end
-einsum_alloc() = () -> begin
-    r=rng(); X=randn(r,48,48,48); Y=randn(r,48,48)
-    (()->einsum("abc,cd->abd",X,Y), ()->(@tensor Z[a,b,d]:=X[a,b,c]*Y[c,d]), approx(Float64))
-end
-einsum_inplace() = () -> begin
-    r=rng(); X=randn(r,48,48,48); Y=randn(r,48,48); C=zeros(48,48,48); D=similar(C)
-    P=plan_einsum("abc,cd->abd",X,Y); ws=EinsumWorkspace(Float64)
-    (()->einsum!(C,P,X,Y;workspace=ws), ()->(@tensor D[a,b,d]=X[a,b,c]*Y[c,d]), approx(Float64))
-end
-einsum_contract4() = () -> begin
-    r=rng(); X=randn(r,16,16,16,16); Y=randn(r,16,16,16,16)
-    (()->einsum("abcd,ebfd->aecf",X,Y), ()->(@tensor Z[a,e,c,f]:=X[a,b,c,d]*Y[e,b,f,d]), approx(Float64))
-end
-tridiagonal_solve(n) = () -> begin
-    r=rng(); Tm=LA.Tridiagonal(randn(r,n-1),randn(r,n).+4,randn(r,n-1)); b=randn(r,n)
-    (()->O.lu(Tm)\b, ()->LA.lu(Tm)\b, approx(Float64))
-end
-packed_spmv(n) = () -> begin
-    r=rng(); H=spd(r,Float64,n); P=pack_matrix(Matrix(H);uplo=:U,kind=:symmetric)
-    AP=[H[i,j] for j in 1:n for i in 1:j]; x=randn(r,n); y=zeros(n); z=zeros(n)
-    (()->spmv!(y,P,x), ()->LA.BLAS.spmv!('U',1.0,AP,x,0.0,z), approx(Float64))
+function all_cases()
+    cases=Case[]
+    for op in OPS, kind in op.kinds, (T,_) in ELTYPES
+        for (lab,n) in zip(SIZE_LABELS,sizes_for(kind,op.class,T))
+            push!(cases,Case(join((op.name,kind,eltype_label(T),lab),'/'),op,kind,T,lab,n))
+        end
+    end
+    cases
 end
 
-const CASES=[
-    Case("gemm_f64_512","GEMM","in-place",gemm_case(Float64,512)),
-    Case("gemm_f32_512","GEMM","in-place",gemm_case(Float32,512)),
-    Case("gemm_c64_256","GEMM","in-place",gemm_case(ComplexF64,256)),
-    Case("mul_sparse_dense","sparse multiplication","in-place",mul_sparse_dense()),
-    Case("mul_sparse_sparse","sparse multiplication","allocating",mul_sparse_sparse()),
-    Case("syrk_f64_512","BLAS 3","in-place",syrk_case(512)),
-    Case("trsm_f64_512","BLAS 3","in-place",trsm_case(512)),
-    Case("lu_f64_512","dense factorizations","allocating",lu_case(Float64,512)),
-    Case("lu_c64_256","dense factorizations","allocating",lu_case(ComplexF64,256)),
-    Case("cholesky_f64_512","dense factorizations","allocating",cholesky_case(Float64,512)),
-    Case("qr_f64_512x256","dense factorizations","allocating",qr_case(Float64,512,256)),
-    Case("svd_jacobi_f64_192","SVD and spectra","allocating",svd_case(Float64,192;algorithm=:jacobi)),
-    Case("svd_golubkahan_f64_192","SVD and spectra","allocating",svd_case(Float64,192;algorithm=:golub_kahan)),
-    Case("eigen_hermitian_f64_256","SVD and spectra","allocating",eigen_case(Float64,256)),
-    Case("solve_dense_ldiv","dense solve","allocating",dense_solve_alloc(512)),
-    Case("solve_dense_ldiv!","dense solve","in-place",dense_solve_inplace(512)),
-    Case("solve_sparse_backslash_spd","sparse solve","allocating",sparse_backslash(;c=0.0)),
-    Case("solve_sparse_backslash_lu","sparse solve","allocating",sparse_backslash(;c=0.3)),
-    Case("sparse_lu","sparse factorizations","allocating",sparse_lu()),
-    Case("sparse_cholesky","sparse factorizations","allocating",sparse_cholesky()),
-    Case("sparse_ldiv!","sparse solve","in-place",sparse_ldiv_inplace()),
-    Case("einsum_abc_cd","tensors","allocating",einsum_alloc()),
-    Case("einsum!_abc_cd","tensors","in-place",einsum_inplace()),
-    Case("einsum_abcd_ebfd","tensors","allocating",einsum_contract4()),
-    Case("tridiagonal_solve","structured matrices","allocating",tridiagonal_solve(10_000)),
-    Case("packed_spmv","structured matrices","in-place",packed_spmv(512)),
-]
-
-function median_sample(b)
-    ts=sort([s.time for s in b.samples]); q=length(ts)
-    (isodd(q) ? ts[(q+1)÷2] : (ts[q÷2]+ts[q÷2+1])/2), minimum(s.bytes for s in b.samples)
+# ---- command line ---------------------------------------------------------
+function parse_args(args)
+    opts=Dict{String,Vector{String}}(); pats=String[]; flags=Set{String}()
+    for a in args
+        if startswith(a,"--")
+            kv=split(a[3:end],'=';limit=2)
+            length(kv)==1 ? push!(flags,kv[1]) : (opts[kv[1]]=split(kv[2],','))
+        else
+            push!(pats,a)
+        end
+    end
+    pats,opts,flags
 end
-function run_case(c::Case)
-    oxi,ref,check=c.run()
-    xo=oxi(); xr=ref()            # warm-up (compilation) and results
-    check(xo,xr) || error("$(c.name): OxiBLAS result differs from the reference")
-    bo=@be oxi() seconds=SECONDS
-    br=@be ref() seconds=SECONDS
-    (to,ao),(tr,ar)=median_sample(bo),median_sample(br)
-    (;name=c.name,family=c.family,form=c.form,oxiblas_s=to,reference_s=tr,ratio=to/tr,oxiblas_bytes=ao,reference_bytes=ar)
+globre(p)=Regex("^"*replace(p,r"[.+^$()|\[\]{}\\]"=>s"\\\0","*"=>"[^/]*")*"\$")
+function selected_cases(pats,opts)
+    sel=all_cases()
+    isempty(pats) || filter!(c->any(p->occursin('*',p) ? occursin(globre(p),c.name) : startswith(c.name,p),pats),sel)
+    haskey(opts,"types") && filter!(c->eltype_label(c.T) in opts["types"],sel)
+    haskey(opts,"sizes") && filter!(c->c.size_label in opts["sizes"],sel)
+    haskey(opts,"families") && filter!(c->c.op.family in opts["families"],sel)
+    haskey(opts,"inputs") && filter!(c->String(c.kind) in opts["inputs"],sel)
+    sel
 end
 
-selected=isempty(ARGS) ? CASES : filter(c->any(a->startswith(c.name,a),ARGS),CASES)
-isempty(selected) && error("no case matches $(ARGS); names: $(join((c.name for c in CASES),", "))")
-outdir=joinpath(@__DIR__,"results"); mkpath(outdir)
-stamp=Dates.format(now(),"yyyymmdd_HHMMSS")
-header="Julia $(VERSION), $(Threads.nthreads()) thread(s), reference $(REFERENCE) ($(LA.BLAS.get_config().loaded_libs[1].libname |> basename)), $(Sys.CPU_NAME)"
-println(header)
-rows=[]
-for c in selected
-    row=Base.invokelatest(run_case,c); push!(rows,row)
-    @printf("%-28s %-12s oxiblas %10.3f ms  ref %10.3f ms  ratio %6.2f  bytes %d / %d\n",
-            row.name,row.form,1e3row.oxiblas_s,1e3row.reference_s,row.ratio,row.oxiblas_bytes,row.reference_bytes)
+# ---- one case -------------------------------------------------------------
+short(e)=first(replace(sprint(showerror,e),r"\s+"=>" "),140)
+function is_unsupported(e,api)
+    if e isa MethodError
+        f=e.f
+        f===api && return true
+        m=try parentmodule(f) catch; nothing end
+        return m===OxiBLAS && !startswith(String(nameof(f)),"_")
+    end
+    e isa ArgumentError && occursin(r"not (supported|available|implemented)|refuse"i,e.msg)
 end
-open(joinpath(outdir,"$stamp.csv"),"w") do io
-    println(io,"name,family,form,oxiblas_ms,reference_ms,ratio,oxiblas_bytes,reference_bytes")
-    for r in rows
-        println(io,join((r.name,r.family,r.form,round(1e3r.oxiblas_s;sigdigits=5),round(1e3r.reference_s;sigdigits=5),
-                         round(r.ratio;digits=3),r.oxiblas_bytes,r.reference_bytes),','))
+function allocs_of(f::F) where F
+    a=Base.@allocations f()
+    b=Base.@allocated f()
+    a,b
+end
+function median_time(f::F) where F
+    b=@be f() seconds=SECONDS
+    median(s.time for s in b.samples)
+end
+
+blank(c,ref_label)=(;name=c.name,op=c.op.name,family=c.op.family,form=c.op.form,input=String(c.kind),ref_input=ref_label,
+    eltype=eltype_label(c.T),size=c.size_label,order=c.kind===:tensor ? c.n : order(c.kind,c.n),status="",
+    oxiblas_s=NaN,reference_s=NaN,oxiblas_allocs=-1,reference_allocs=-1,oxiblas_bytes=-1,reference_bytes=-1,note="")
+
+function run_case(c::Case,timing::Bool)
+    r=rng(); T=c.T
+    A,R,ref_label=c.kind===:tensor ? (nothing,nothing,"TensorOperations") : make_input(c.kind,T,c.n,r)
+    row=blank(c,ref_label)
+    built=try
+        c.op.build(A,R,T,row.order,r)
+    catch e
+        return merge(row,(;status=is_unsupported(e,c.op.api) ? "unsupported" : "error",note="setup: "*short(e)))
+    end
+    oxi,ref0,check=built
+    xo=try oxi() catch e
+        return merge(row,(;status=is_unsupported(e,c.op.api) ? "unsupported" : "error",note=short(e)))
+    end
+    note=""; xr=nothing; ref=ref0
+    if ref===nothing
+        note="no reference"
+    else
+        try xr=ref() catch e; note="no reference: "*short(e); ref=nothing end
+    end
+    ok=try check(xo,xr) catch e; note*=(isempty(note) ? "" : "; ")*"check: "*short(e); false end
+    status=ok===missing ? "unchecked" : ok ? "ok" : "mismatch"
+    ao,bo=allocs_of(oxi)
+    ar,br=ref===nothing ? (-1,-1) : allocs_of(ref)
+    to=timing ? median_time(oxi) : NaN
+    tr=timing && ref!==nothing ? median_time(ref) : NaN
+    merge(row,(;status,oxiblas_s=to,reference_s=tr,oxiblas_allocs=ao,reference_allocs=ar,oxiblas_bytes=bo,reference_bytes=br,note))
+end
+
+# ---- reports --------------------------------------------------------------
+fmt_ms(t)=isnan(t) ? "" : @sprintf("%.4g",1e3t)
+fmt_int(x)=x<0 ? "" : string(x)
+ratio(r)=r.oxiblas_s/r.reference_s
+csvfield(s)=replace(string(s),','=>';','"'=>"'")
+function write_csv(path,rows)
+    open(path,"w") do io
+        println(io,"name,op,family,form,input,ref_input,eltype,size,order,status,oxiblas_ms,reference_ms,ratio,oxiblas_allocs,reference_allocs,oxiblas_bytes,reference_bytes,note")
+        for r in rows
+            q=ratio(r)
+            println(io,join(csvfield.((r.name,r.op,r.family,r.form,r.input,r.ref_input,r.eltype,r.size,r.order,r.status,
+                fmt_ms(r.oxiblas_s),fmt_ms(r.reference_s),isnan(q) ? "" : @sprintf("%.3f",q),
+                fmt_int(r.oxiblas_allocs),fmt_int(r.reference_allocs),fmt_int(r.oxiblas_bytes),fmt_int(r.reference_bytes),r.note)),','))
+        end
     end
 end
-open(joinpath(outdir,"$stamp.md"),"w") do io
-    println(io,"# High-level benchmark, $stamp\n\n$header\n")
-    println(io,"| Case | Family | Form | OxiBLAS (ms) | Reference (ms) | OxiBLAS / reference | OxiBLAS bytes | Reference bytes |")
-    println(io,"|---|---|---|---|---|---|---|---|")
-    for r in rows
-        @printf(io,"| `%s` | %s | %s | %.3f | %.3f | %.2f | %d | %d |\n",r.name,r.family,r.form,1e3r.oxiblas_s,1e3r.reference_s,r.ratio,r.oxiblas_bytes,r.reference_bytes)
+geomean(v)=isempty(v) ? NaN : exp(mean(log.(v)))
+function summary_table(io,rows,key,title)
+    println(io,"\n## By ",lowercase(title),"\n")
+    println(io,"| $title | Cases | Ran | Unsupported | Mismatch / error | Timed vs reference | Geometric mean ratio | Median ratio | OxiBLAS faster |")
+    println(io,"|---|---|---|---|---|---|---|---|---|")
+    for k in unique(key.(rows))
+        g=filter(r->key(r)==k,rows)
+        q=[ratio(r) for r in g if r.status=="ok" && !isnan(ratio(r))]
+        @printf(io,"| %s | %d | %d | %d | %d | %d | %s | %s | %s |\n",k,length(g),count(r->r.status in ("ok","unchecked"),g),
+            count(r->r.status=="unsupported",g),count(r->r.status in ("mismatch","error"),g),length(q),
+            isempty(q) ? "" : @sprintf("%.2f",geomean(q)),isempty(q) ? "" : @sprintf("%.2f",median(q)),
+            isempty(q) ? "" : "$(count(<(1),q))/$(length(q))")
     end
 end
-println("Results: ",joinpath(outdir,"$stamp.csv"))
+function write_md(path,rows,header,timing)
+    open(path,"w") do io
+        println(io,"# High-level benchmark\n\n$header\n")
+        println(io,"Ratio = OxiBLAS time / reference time (below 1: OxiBLAS is faster); ratios only count checked cases. ",
+                   "Allocations are those of one warm call.\n")
+        println(io,"Status counts: ",join(("$s $(count(r->r.status==s,rows))" for s in ("ok","unchecked","unsupported","mismatch","error")),", "),".")
+        if timing
+            summary_table(io,rows,r->r.family,"Family")
+            summary_table(io,rows,r->r.op,"Operation")
+            summary_table(io,rows,r->r.eltype,"Element type")
+            summary_table(io,rows,r->r.input,"Input")
+        end
+        done=filter(r->r.oxiblas_allocs>=0,rows)
+        println(io,"\n## Allocations\n")
+        println(io,"BigFloat arithmetic allocates by itself: BigFloat cases are counted in the tables but not in the in-place list.\n")
+        inplace=filter(r->r.form=="in-place" && r.eltype!="big" && r.oxiblas_allocs>0,done)
+        println(io,"In-place cases that allocate (BigFloat excluded): $(length(inplace)) of $(count(r->r.form=="in-place" && r.eltype!="big",done)).\n")
+        more=filter(r->r.reference_allocs>=0 && r.oxiblas_allocs>r.reference_allocs,done)
+        println(io,"Cases where OxiBLAS allocates more often than the reference: $(length(more)) of $(count(r->r.reference_allocs>=0,done)).\n")
+        println(io,"| Case | Form | OxiBLAS allocs | Reference allocs | OxiBLAS bytes | Reference bytes |")
+        println(io,"|---|---|---|---|---|---|")
+        for r in sort(unique(vcat(inplace,more));by=r->-r.oxiblas_allocs)
+            @printf(io,"| `%s` | %s | %d | %s | %d | %s |\n",r.name,r.form,r.oxiblas_allocs,fmt_int(r.reference_allocs),r.oxiblas_bytes,fmt_int(r.reference_bytes))
+        end
+        bad=filter(r->r.status in ("mismatch","error"),rows)
+        if !isempty(bad)
+            println(io,"\n## Mismatches and errors\n")
+            println(io,"| Case | Status | Note |\n|---|---|---|")
+            for r in bad; println(io,"| `$(r.name)` | $(r.status) | $(replace(r.note,'|'=>'/')) |"); end
+        end
+        println(io,"\n## All cases\n")
+        println(io,"| Case | Reference input | Order | Status | OxiBLAS (ms) | Reference (ms) | Ratio | OxiBLAS allocs | Reference allocs | OxiBLAS bytes | Reference bytes |")
+        println(io,"|---|---|---|---|---|---|---|---|---|---|---|")
+        for r in rows
+            q=ratio(r)
+            @printf(io,"| `%s` | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s |\n",r.name,r.ref_input,r.order,r.status,
+                fmt_ms(r.oxiblas_s),fmt_ms(r.reference_s),isnan(q) ? "" : @sprintf("%.2f",q),
+                fmt_int(r.oxiblas_allocs),fmt_int(r.reference_allocs),fmt_int(r.oxiblas_bytes),fmt_int(r.reference_bytes))
+        end
+    end
+end
+
+# ---- main -----------------------------------------------------------------
+function main(args)
+    pats,opts,flags=parse_args(args)
+    sel=selected_cases(pats,opts)
+    isempty(sel) && error("no case matches $(args); see --list")
+    if "list" in flags
+        foreach(c->println(c.name),sel); println(length(sel)," cases"); return
+    end
+    timing=!("allocs" in flags)
+    outdir=joinpath(@__DIR__,"results"); mkpath(outdir)
+    stamp=Dates.format(now(),"yyyymmdd_HHMMSS")*(timing ? "" : "_allocs")
+    header="Julia $(VERSION), $(Threads.nthreads()) thread(s), reference $(REFERENCE) ($(basename(LA.BLAS.get_config().loaded_libs[1].libname))), $(Sys.CPU_NAME), $(length(sel)) cases"*(timing ? "" : ", allocation campaign (no timing)")
+    println(header)
+    rows=[]
+    for (i,c) in enumerate(sel)
+        row=Base.invokelatest(run_case,c,timing); push!(rows,row)
+        @printf("[%d/%d] %-40s %-11s oxi %9s ms  ref %9s ms  allocs %s / %s %s\n",i,length(sel),row.name,row.status,
+                fmt_ms(row.oxiblas_s),fmt_ms(row.reference_s),fmt_int(row.oxiblas_allocs),fmt_int(row.reference_allocs),
+                isempty(row.note) ? "" : "  ($(first(row.note,70)))")
+        flush(stdout)
+        if i%25==0 || i==length(sel)           # partial results survive an interrupted run
+            write_csv(joinpath(outdir,"$stamp.csv"),rows)
+        end
+    end
+    write_md(joinpath(outdir,"$stamp.md"),rows,header,timing)
+    println("Results: ",joinpath(outdir,"$stamp.csv"),", ",joinpath(outdir,"$stamp.md"))
+end
+main(ARGS)

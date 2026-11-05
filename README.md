@@ -86,8 +86,9 @@ from Julia 1.14 on.
 
 ```sh
 julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-julia --project=benchmark --threads=1 benchmark/run.jl          # high-level suite
-julia --project=benchmark --threads=1 benchmark/run.jl gemm lu  # selection by name prefix
+julia --project=benchmark --threads=1 benchmark/run.jl                  # high-level grid (~4,000 cases)
+julia --project=benchmark --threads=1 benchmark/run.jl lu --types=f64   # selection
+julia --project=benchmark benchmark/run.jl --allocs                     # allocation campaign
 ```
 
 The historical campaigns and kernel micro-benchmarks are in

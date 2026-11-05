@@ -28,9 +28,12 @@ outside the repository; the entries below summarize them.
   methods (dispatch only, no runtime cost). The core tests pass on 1.10, 1.12,
   1.13 and 1.14-alpha.
 - **Benchmarks.**
-  - New high-level suite `benchmark/run.jl` (Chairmarks), against
-    OpenBLAS/Accelerate, SparseArrays and TensorOperations, with each result
-    checked before timing.
+  - New high-level suite `benchmark/run.jl` (Chairmarks): a grid of about
+    4,000 cases (each high-level operation × LinearAlgebra and OxiBLAS input
+    types × Float16, Float32, Float64, ComplexF32, ComplexF64, BigFloat × three
+    sizes), against OpenBLAS/Accelerate, SparseArrays and TensorOperations,
+    with each result checked and the allocation count of each case recorded
+    (`--allocs` runs the allocation campaign alone).
   - The historical campaigns are archived in `benchmark/archive/`.
   - The Rust programs and scripts are no longer part of the package.
 - **Documentation.** Documenter (`docs/make.jl`), with a home page, eight

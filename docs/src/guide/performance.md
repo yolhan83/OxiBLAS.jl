@@ -2,22 +2,32 @@
 
 ## High-level suite
 
-`benchmark/run.jl` measures the operations users call, against the matching
-reference:
+`benchmark/run.jl` measures a generated grid: each high-level operation, on
+each input type it accepts, for `Float16`, `Float32`, `Float64`, `ComplexF32`,
+`ComplexF64` and `BigFloat`, at three sizes (about 4,000 cases). The inputs
+are the matrix types of `LinearAlgebra` (`Matrix`, `Hermitian`, triangular,
+`Diagonal`, `Bidiagonal`, `Tridiagonal`, `SymTridiagonal`, `SparseMatrixCSC`)
+and those of OxiBLAS (`CSRMatrix`, `CSCMatrix`, `COOMatrix`, `BandedMatrix`,
+`PackedMatrix`). Each case is compared with the matching reference:
 
 | Family | Reference |
 |---|---|
-| GEMM, `OxiBLAS.mul!`, high-level BLAS | OpenBLAS (`LinearAlgebra`), Accelerate on macOS |
-| LU, Cholesky, QR, SVD, eigenvalues | OpenBLAS LAPACK, Accelerate |
-| `A \ b`, `OxiBLAS.ldiv`, `ldiv!` | the same problem with `LinearAlgebra` (dense) or SparseArrays (sparse) |
-| sparse factorizations and products | SparseArrays (UMFPACK, CHOLMOD) |
+| products, BLAS 3 | `LinearAlgebra` (OpenBLAS, Accelerate on macOS; generic code for `Float16`/`BigFloat`) |
+| dense factorizations, spectra, matrix functions | `LinearAlgebra` (LAPACK, or its generic code) |
+| `\`, `OxiBLAS.ldiv`, `ldiv!` | the same problem with `LinearAlgebra` or SparseArrays |
+| sparse factorizations | SparseArrays (UMFPACK, CHOLMOD, SPQR) |
+| `BandedMatrix`, `PackedMatrix` | the same matrix as `SparseMatrixCSC` or `Hermitian{Matrix}` |
 | `einsum` | TensorOperations |
-| structured matrices | structured types of `LinearAlgebra` |
+
+When `LinearAlgebra` has no method (for example `svd` of a `BigFloat` matrix,
+or UMFPACK for `Float32`), only OxiBLAS is measured.
 
 ```sh
 julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-julia --project=benchmark --threads=1 benchmark/run.jl              # every case
-julia --project=benchmark --threads=1 benchmark/run.jl gemm lu       # selection
+julia --project=benchmark --threads=1 benchmark/run.jl                     # whole grid
+julia --project=benchmark --threads=1 benchmark/run.jl lu 'ldiv!/*/f64/*'  # name prefixes and globs
+julia --project=benchmark benchmark/run.jl --types=f32,f64 --sizes=s --families=solves
+julia --project=benchmark benchmark/run.jl --allocs                        # allocation campaign only
 OXIBLAS_REFERENCE=accelerate julia --project=benchmark benchmark/run.jl
 ```
 
@@ -25,14 +35,20 @@ OXIBLAS_REFERENCE=accelerate julia --project=benchmark benchmark/run.jl
 
 - **Same conditions.** Same mathematical problem, same data and same number of
   threads for OxiBLAS and the reference.
-- **Verification.** Each result is compared with the reference before timing.
+- **Verification.** Each OxiBLAS result is checked by a backward error or a
+  reconstruction, which does not need the reference.
 - **Warm timings.** A first call compiles and warms up; the reported times are
   medians of warm samples (Chairmarks).
-- **Separate allocation.** Allocating forms (`OxiBLAS.lu(A)`, `A \ b`) and
-  in-place forms (`ldiv!`, `gemm!` with a workspace) are distinct cases.
+- **Allocations.** Allocation count and bytes of one warm call, on both sides.
+  The report lists the in-place cases that allocate and the cases that
+  allocate more than the reference.
+- **Separate forms.** Allocating forms (`OxiBLAS.lu(A)`, `A \ b`), in-place
+  forms (`ldiv!`, `mul!`, `lu!`) and sparse refactorizations
+  (`lu!(F, A)`, `cholesky!(F, A)`) are distinct cases.
 - **Targeted compilation.** Only the selected cases are compiled.
-- **Outputs.** Median time, allocated bytes and OxiBLAS/reference ratio, in
-  CSV and Markdown under `benchmark/results/`.
+- **Outputs.** Status, median times, ratio, allocation counts and bytes, in
+  CSV and Markdown under `benchmark/results/`, with summaries by family,
+  operation, element type and input.
 
 The benchmarks are not run by the CI: timings on GitHub runners are not
 stable enough.
