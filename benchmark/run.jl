@@ -112,6 +112,11 @@ function median_time(f::F) where F
     median(s.time for s in b.samples)
 end
 
+const SUITESPARSE_FAMILIES=("factorizations","solves")
+const SUITESPARSE_OPS=("det","logabsdet")
+no_suitesparse(c)=(c.kind in SPARSE_KINDS || c.kind in BANDED_KINDS) && !(c.T in (Float64,ComplexF64)) &&
+                  (c.op.family in SUITESPARSE_FAMILIES || c.op.name in SUITESPARSE_OPS)
+
 blank(c,ref_label)=(;name=c.name,op=c.op.name,family=c.op.family,form=c.op.form,input=String(c.kind),ref_input=ref_label,
     eltype=eltype_label(c.T),size=c.size_label,order=c.kind===:tensor ? c.n : order(c.kind,c.n),status="",
     oxiblas_s=NaN,reference_s=NaN,oxiblas_allocs=-1,reference_allocs=-1,oxiblas_bytes=-1,reference_bytes=-1,note="")
@@ -126,12 +131,18 @@ function run_case(c::Case,timing::Bool)
         return merge(row,(;status=is_unsupported(e,c.op.api) ? "unsupported" : "error",note="setup: "*short(e)))
     end
     oxi,ref0,check=built
+    # SuiteSparse (UMFPACK, CHOLMOD, SPQR) only handles Float64 and ComplexF64:
+    # on other element types, LinearAlgebra falls back to generic dense code
+    # on the sparse matrix, which does not finish at the larger sizes.
+    if no_suitesparse(c)
+        ref0=nothing
+    end
     xo=try oxi() catch e
         return merge(row,(;status=is_unsupported(e,c.op.api) ? "unsupported" : "error",note=short(e)))
     end
     note=""; xr=nothing; ref=ref0
     if ref===nothing
-        note="no reference"
+        note=no_suitesparse(c) ? "no reference: SuiteSparse has no $(eltype_label(c.T))" : "no reference"
     else
         try xr=ref() catch e; note="no reference: "*short(e); ref=nothing end
     end

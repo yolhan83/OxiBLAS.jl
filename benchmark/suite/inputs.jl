@@ -63,7 +63,9 @@ function sparse_general(T,k)
 end
 function sparse_spd(T,k)
     L,K=lap2d(k)
-    T<:Complex ? SparseMatrixCSC{T,Int}(L+0.3im*K) : SparseMatrixCSC{T,Int}(L)
+    # i·K is Hermitian with eigenvalues in ±1.2: the shift 2I keeps L+0.3i·K+2I
+    # positive definite (λmin(L) alone is O(1/k²)).
+    T<:Complex ? SparseMatrixCSC{T,Int}(L+0.3im*K+2.0LA.I) : SparseMatrixCSC{T,Int}(L)
 end
 
 function spd_dense(r,T,n)
@@ -127,8 +129,9 @@ function make_input(kind::Symbol,T,n,r)
         B=LA.Bidiagonal(rnd(r,T,n).+T(4),rnd(r,T,n-1),:U); (B,B,"Bidiagonal")
     elseif kind===:tridiagonal
         M=LA.Tridiagonal(rnd(r,T,n-1),rnd(r,T,n).+T(4),rnd(r,T,n-1)); (M,M,"Tridiagonal")
-    elseif kind===:symtridiagonal       # diagonally dominant: positive definite when real
-        M=LA.SymTridiagonal(real(rnd(r,T,n)).+T(4),rnd(r,T,n-1)/T(2)); (M,M,"SymTridiagonal")
+    elseif kind===:symtridiagonal       # strictly diagonally dominant (|e| ≤ 1/2, d ≥ 4): positive definite when real
+        e=rnd(r,T,n-1); e=e./T(2max(1,maximum(abs,e;init=0)))
+        M=LA.SymTridiagonal(abs.(real(rnd(r,T,n))).+T(4),e); (M,M,"SymTridiagonal")
     elseif kind===:banded
         B,S=banded_general(r,T,n); (B,S,"SparseMatrixCSC")
     elseif kind===:banded_spd
