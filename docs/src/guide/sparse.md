@@ -4,9 +4,9 @@
 
 | Format | Constructor |
 |---|---|
-| `CSRMatrix`, `CSCMatrix`, `COOMatrix` | `CSRMatrix(m, n, rowptr, colind, values)`, or conversion of a matrix (`CSRMatrix(S)` for `S::SparseMatrixCSC`) |
-| `DIAMatrix`, `ELLMatrix`, `BSRMatrix`, `BSCMatrix`, `HYBMatrix`, `SELLMatrix` | extended formats, converted from CSR/CSC |
-| `SparseTensor` | N-dimensional sparse array ([tensors](tensors.md)) |
+| [`CSRMatrix`](@ref), [`CSCMatrix`](@ref), [`COOMatrix`](@ref) | `CSRMatrix(m, n, rowptr, colind, values)`, or conversion of a matrix (`CSRMatrix(S)` for `S::SparseMatrixCSC`) |
+| [`DIAMatrix`](@ref), [`ELLMatrix`](@ref), [`BSRMatrix`](@ref), [`BSCMatrix`](@ref), [`HYBMatrix`](@ref), [`SELLMatrix`](@ref) | extended formats, converted from CSR/CSC |
+| [`SparseTensor`](@ref) | N-dimensional sparse array ([tensors](tensors.md)) |
 
 These types are `SparseArrays.AbstractSparseMatrix`. They interoperate with
 SparseArrays:
@@ -40,7 +40,7 @@ C = OxiBLAS.cholesky(Hermitian(P))
 
 | Structure (tested in O(nnz)) | Factorization |
 |---|---|
-| triangular or diagonal | native sparse substitution (`sparse_triangular_solve`) |
+| triangular or diagonal | native sparse substitution ([`sparse_triangular_solve`](@ref)) |
 | Hermitian | multifrontal Cholesky, or Bunch–Kaufman if not positive definite |
 | complex symmetric | Bunch–Kaufman |
 | other square | multifrontal LU |
@@ -48,44 +48,47 @@ C = OxiBLAS.cholesky(Hermitian(P))
 
 | Engine | Functions |
 |---|---|
-| LU | `multifrontal_lu`, `sparse_lu`, `sparse_lu_static`, `sparse_lu_blocked` |
-| Cholesky | `multifrontal_cholesky`, `supernodal_cholesky`, `sparse_cholesky`, `symbolic_cholesky` |
-| indefinite LDLᵀ | `sparse_ldlt` (Bunch–Kaufman within fronts), `ldl_inertia` |
-| QR | `sparse_qr`, `sparse_apply_q!` |
-| out of core | `out_of_core_lu`, `out_of_core_cholesky`, `out_of_core_memory_usage` |
-| triangular | `sparse_triangular_solve` |
+| LU | [`multifrontal_lu`](@ref), [`sparse_lu`](@ref), [`sparse_lu_static`](@ref), [`sparse_lu_blocked`](@ref) |
+| Cholesky | [`multifrontal_cholesky`](@ref), [`supernodal_cholesky`](@ref), [`sparse_cholesky`](@ref), [`symbolic_cholesky`](@ref) |
+| indefinite LDLᵀ | [`sparse_ldlt`](@ref) (Bunch–Kaufman within fronts), [`ldl_inertia`](@ref) |
+| QR | [`sparse_qr`](@ref), [`sparse_apply_q!`](@ref) |
+| out of core | [`out_of_core_lu`](@ref), [`out_of_core_cholesky`](@ref), [`out_of_core_memory_usage`](@ref) |
+| triangular | [`sparse_triangular_solve`](@ref) |
 
 ## Iterative solvers and preconditioners
 
-- **Solvers.** `cg`, `pcg`, `gmres`, `fgmres`, `bicgstab`, `minres`, `tfqmr`,
-  `qmr`, `idrs`, and their block variants `block_cg` and `block_gmres`. Each
+Examples, the table of which solver suits which matrix, and the result
+fields: [How do I… solve iteratively](howto.md#Iteratively-(Krylov-methods)).
+
+- **Solvers.** [`cg`](@ref), [`pcg`](@ref), [`gmres`](@ref), [`fgmres`](@ref), [`bicgstab`](@ref), [`minres`](@ref), [`tfqmr`](@ref),
+  [`qmr`](@ref), [`idrs`](@ref), and their block variants [`block_cg`](@ref) and [`block_gmres`](@ref). Each
   returns the solution, the convergence status, the iterations and the
   actually recomputed residual.
-- **Preconditioners.** `ilu0`, `ilut`, `ic0`, `ict`, `spai`, `ainv`, `amg`,
-  `relaxation_preconditioner`, `polynomial_preconditioner` and
-  `additive_schwarz`.
+- **Preconditioners.** [`ilu0`](@ref), [`ilut`](@ref), [`ic0`](@ref), [`ict`](@ref), [`spai`](@ref), [`ainv`](@ref), [`amg`](@ref),
+  [`relaxation_preconditioner`](@ref), [`polynomial_preconditioner`](@ref) and
+  [`additive_schwarz`](@ref).
 
 ## Orderings and graphs
 
 The available ordering families:
 
-- **minimum degree:** `amd_ordering`, `colamd_ordering`,
-  `minimum_degree_ordering`, `multiple_minimum_degree`,
-  `column_minimum_degree`;
-- **profile and bandwidth:** `reverse_cuthill_mckee`;
-- **nested dissection:** `nested_dissection`, `multilevel_nested_dissection`.
+- **minimum degree:** [`amd_ordering`](@ref), [`colamd_ordering`](@ref),
+  [`minimum_degree_ordering`](@ref), [`multiple_minimum_degree`](@ref),
+  [`column_minimum_degree`](@ref);
+- **profile and bandwidth:** [`reverse_cuthill_mckee`](@ref);
+- **nested dissection:** [`nested_dissection`](@ref), [`multilevel_nested_dissection`](@ref).
 
 The graph tools are:
 
-- `connected_components`, `level_sets`, `multilevel_partition`,
-  `refine_partition`;
-- bipartite matchings (`bipartite_matching`, `weighted_bipartite_matching`);
-- choice of an ordering: `sparse_ordering`, `select_sparse_ordering`,
-  `ordering_metrics`, `compare_orderings`.
+- [`connected_components`](@ref), [`level_sets`](@ref), [`multilevel_partition`](@ref),
+  [`refine_partition`](@ref);
+- bipartite matchings ([`bipartite_matching`](@ref), [`weighted_bipartite_matching`](@ref));
+- choice of an ordering: [`sparse_ordering`](@ref), [`select_sparse_ordering`](@ref),
+  [`ordering_metrics`](@ref), [`compare_orderings`](@ref).
 
 ## Input and output
 
-`read_matrix_market` and `write_matrix_market` read and write the Matrix
+[`read_matrix_market`](@ref) and [`write_matrix_market`](@ref) read and write the Matrix
 Market format.
 
 ## Limitations

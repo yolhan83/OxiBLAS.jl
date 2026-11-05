@@ -29,7 +29,7 @@ Pkg.add(url="https://github.com/yolhan83/OxiBLAS.jl")
 
 ## First examples
 
-**Native matrix multiplication.** `gemm!` writes `C ← α·op(A)·op(B) + β·C`,
+**Native matrix multiplication.** [`gemm!`](@ref) writes `C ← α·op(A)·op(B) + β·C`,
 with an optional reusable workspace:
 
 ```@example home
@@ -52,8 +52,8 @@ x = OxiBLAS.ldiv(F, b)   # reuses F; F \ b gives the same result
 M * x ≈ b
 ```
 
-**Sparse matrices.** The OxiBLAS formats (`CSRMatrix`, `CSCMatrix`,
-`COOMatrix`…) support `\`, with a factorization chosen from the structure, as
+**Sparse matrices.** The OxiBLAS formats ([`CSRMatrix`](@ref), [`CSCMatrix`](@ref),
+[`COOMatrix`](@ref)…) support `\`, with a factorization chosen from the structure, as
 in SparseArrays:
 
 ```@example home
@@ -64,7 +64,7 @@ x = A \ ones(200)
 S * x ≈ ones(200)
 ```
 
-**Tensors.** `einsum` contracts dense or sparse arrays:
+**Tensors.** [`einsum`](@ref) contracts dense or sparse arrays:
 
 ```@example home
 X = randn(8, 9, 10); Y = randn(10, 7)
@@ -74,6 +74,9 @@ size(Z)
 
 ## Organization of the documentation
 
+- **[How do I…?](guide/howto.md)** gives task-oriented recipes: solving a
+  system (direct or iterative), least squares, SVD, eigenvalues, products,
+  sparse matrices, tensors.
 - The **guides** present each family of features and its conventions.
 - The **API reference** groups the docstrings by source family.
 
@@ -83,6 +86,6 @@ size(Z)
 are functions distinct from those of `LinearAlgebra` and `Base`
 (`OxiBLAS.lu !== LinearAlgebra.lu`). They are not exported, so `using
 LinearAlgebra, OxiBLAS` creates no name conflict. Extensions of `LinearAlgebra`
-and `Base` functions (for instance `A \ b` on a `CSRMatrix`) only concern
+and `Base` functions (for instance `A \ b` on a [`CSRMatrix`](@ref)) only concern
 signatures that contain an OxiBLAS type: no method is added for `Matrix` or
 `SparseMatrixCSC`.

@@ -44,6 +44,12 @@ function reference_pages()
         docs=collect(values(multidoc.docs))
         isempty(docs) && continue
         fam=family_of(String(docs[1].data[:path]))
+        # Docstrings gathered in src/docstrings/ belong to the family of the
+        # file that defines the function or type.
+        if fam=="docstrings" && isdefined(binding.mod,name)
+            files=definition_files(getfield(binding.mod,name))
+            fam=isempty(files) ? "utils" : family_of(files[1])
+        end
         if binding.mod!==OxiBLAS
             # A docstring of an OxiBLAS method of another module's function
             # (LinearAlgebra.ldiv!, SparseArrays.fkeep!...): listed by name,
@@ -110,6 +116,7 @@ makedocs(;
     pages=[
         "Home"=>"index.md",
         "Guides"=>[
+            "guide/howto.md",
             "guide/blas.md",
             "guide/factorizations.md",
             "guide/highlevel.md",
@@ -121,12 +128,12 @@ makedocs(;
         ],
         reference,
     ],
-    # Exported names must all appear (with or without docstring, see the
-    # reference pages); internal helpers with a docstring are not listed.
+    # Every exported name must have a docstring listed in the reference
+    # (fatal); internal helpers with a docstring are not listed.
     checkdocs=:exports,
     # Pages may name repository files that are not pages (source files):
     # reported, not fatal.
-    warnonly=[:cross_references,:missing_docs],
+    warnonly=[:cross_references],
 )
 if get(ENV,"GITHUB_ACTIONS","false")=="true"
     deploydocs(;repo="github.com/yolhan83/OxiBLAS.jl.git",devbranch="main",push_preview=false)

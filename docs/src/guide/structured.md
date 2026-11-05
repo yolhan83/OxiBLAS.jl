@@ -22,9 +22,9 @@ y ≈ H * x
 
 | Operations | Functions |
 |---|---|
-| packed products | `spmv!`, `hpmv!`, `tpmv!`, `tpsv!`, `spr!`, `spr2!`, `hpr!`, `hpr2!` |
-| banded products | `gbmv!`, `sbmv!`, `hbmv!`, `tbmv!`, `tbsv!` |
-| factorizations | `band_lu`, `band_cholesky`, `packed_cholesky` (`BandLUFactor`, `BandCholeskyFactor`, `PackedCholeskyFactor`) |
+| packed products | [`spmv!`](@ref), [`hpmv!`](@ref), [`tpmv!`](@ref), [`tpsv!`](@ref), [`spr!`](@ref), [`spr2!`](@ref), [`hpr!`](@ref), [`hpr2!`](@ref) |
+| banded products | [`gbmv!`](@ref), [`sbmv!`](@ref), [`hbmv!`](@ref), [`tbmv!`](@ref), [`tbsv!`](@ref) |
+| factorizations | [`band_lu`](@ref), [`band_cholesky`](@ref), [`packed_cholesky`](@ref) ([`BandLUFactor`](@ref), [`BandCholeskyFactor`](@ref), [`PackedCholeskyFactor`](@ref)) |
 
 These operations only visit the stored coefficients. They accept
 `kernel=:auto` or the ISA requests of GEMM; `:scalar` selects the generic
@@ -39,17 +39,17 @@ wrappers. The chosen engine exploits the structure.
 
 | Type | Engine |
 |---|---|
-| `Tridiagonal` | `band_lu`, O(n) |
-| real `SymTridiagonal` | `band_cholesky` (`cholesky`), `eigen_tridiagonal` (`eigen`) |
+| `Tridiagonal` | [`band_lu`](@ref), O(n) |
+| real `SymTridiagonal` | [`band_cholesky`](@ref) (`cholesky`), [`eigen_tridiagonal`](@ref) (`eigen`) |
 | `Bidiagonal` | substitution (`factorize`), bidiagonal QR kernel (`svd`) |
 | `Diagonal` | direct operations, O(n) |
 | triangular | `TriangularEngine`: substitution, no elimination |
-| `BandedMatrix` | `band_lu`, `band_cholesky`, multifrontal for LDLᵀ |
-| `PackedMatrix` | `packed_cholesky`, `tpsv!` |
+| [`BandedMatrix`](@ref) | [`band_lu`](@ref), [`band_cholesky`](@ref), multifrontal for LDLᵀ |
+| [`PackedMatrix`](@ref) | [`packed_cholesky`](@ref), [`tpsv!`](@ref) |
 
 **The LinearAlgebra functions are left intact.** The structured types of Julia
 only receive `OxiBLAS.*` methods: `LinearAlgebra.lu(::Tridiagonal)` stays the
-one of Julia. Only `BandedMatrix` and `PackedMatrix`, which are OxiBLAS types,
+one of Julia. Only [`BandedMatrix`](@ref) and [`PackedMatrix`](@ref), which are OxiBLAS types,
 extend `LinearAlgebra` functions.
 
 ## Limitations
@@ -57,7 +57,7 @@ extend `LinearAlgebra` functions.
 - **No structured engine** for QR, LQ, Schur, Hessenberg and the
   non-symmetric spectra of banded and tridiagonal types. These cases raise a
   `MethodError`, without a hidden dense conversion.
-- **Indefinite `PackedMatrix`:** no packed Bunch–Kaufman. `factorize` raises an
+- **Indefinite [`PackedMatrix`](@ref):** no packed Bunch–Kaufman. `factorize` raises an
   `ArgumentError`.
 - **No `lu!` on banded storage:** it would need a buffer for the fill-in of
   pivoting.

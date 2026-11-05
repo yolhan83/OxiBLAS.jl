@@ -16,27 +16,27 @@ r = lobpcg(CSRMatrix(L); nev=3, which=:smallest)
 
 | Function | Method |
 |---|---|
-| `lanczos(A; nev, which)`, `thick_restart_lanczos` | Hermitian Lanczos, thick restart |
-| `arnoldi`, `iram`, `thick_restart_arnoldi` | Arnoldi, implicit or thick restart |
-| `block_lanczos`, `block_arnoldi` (and `*_factor`) | block variants |
+| `lanczos(A; nev, which)`, [`thick_restart_lanczos`](@ref) | Hermitian Lanczos, thick restart |
+| [`arnoldi`](@ref), [`iram`](@ref), [`thick_restart_arnoldi`](@ref) | Arnoldi, implicit or thick restart |
+| [`block_lanczos`](@ref), [`block_arnoldi`](@ref) (and `*_factor`) | block variants |
 | `lobpcg(A; nev, B, which)` | LOBPCG, generalized problems possible |
-| `shift_invert` | spectral transformation |
-| `polynomial_filter`, `apply_filter!`, `filter_response` | Chebyshev filters (`ChebyshevFilter`, `FilterWorkspace`) |
-| `eigenvalues_in_interval`, `count_eigenvalues_in_interval`, `polynomial_filtered_eigenvalues`, `hermitian_spectral_bounds` | interval search |
+| [`shift_invert`](@ref) | spectral transformation |
+| [`polynomial_filter`](@ref), [`apply_filter!`](@ref), [`filter_response`](@ref) | Chebyshev filters ([`ChebyshevFilter`](@ref), [`FilterWorkspace`](@ref)) |
+| [`eigenvalues_in_interval`](@ref), [`count_eigenvalues_in_interval`](@ref), [`polynomial_filtered_eigenvalues`](@ref), [`hermitian_spectral_bounds`](@ref) | interval search |
 
 ## Singular values
 
 | Function | Method |
 |---|---|
-| `sparse_svd_lanczos`, `sparse_svd` | partial sparse SVD (Golub–Kahan by default), `SparseSVDWorkspace` |
-| `svd_selected(A; indices, interval)`, `svd_truncated`, `svd_randomized` | partial dense SVDs |
-| `incremental_svd`, `svd_add_rows!`, `svd_add_columns!`, `svd_snapshot`, `svd_rank` | SVD updated by rows or columns (`IncrementalSVDFactor`) |
+| [`sparse_svd_lanczos`](@ref), [`sparse_svd`](@ref) | partial sparse SVD (Golub–Kahan by default), [`SparseSVDWorkspace`](@ref) |
+| `svd_selected(A; indices, interval)`, [`svd_truncated`](@ref), [`svd_randomized`](@ref) | partial dense SVDs |
+| [`incremental_svd`](@ref), [`svd_add_rows!`](@ref), [`svd_add_columns!`](@ref), [`svd_snapshot`](@ref), [`svd_rank`](@ref) | SVD updated by rows or columns ([`IncrementalSVDFactor`](@ref)) |
 
 ## Stochastic estimators
 
-`trace_hutchinson`, `trace_hutch_plus_plus`, `trace_xtrace` and
-`trace_xtrace_loo` estimate the trace. `stochastic_diagonal`,
-`stochastic_frobenius` and `stochastic_logdet` estimate the diagonal, the
+[`trace_hutchinson`](@ref), [`trace_hutch_plus_plus`](@ref), [`trace_xtrace`](@ref) and
+[`trace_xtrace_loo`](@ref) estimate the trace. [`stochastic_diagonal`](@ref),
+[`stochastic_frobenius`](@ref) and [`stochastic_logdet`](@ref) estimate the diagonal, the
 Frobenius norm and the log-determinant. All are configured by
 `StochasticConfig(; num_probes, seed, ...)`, with an explicit seed and no
 global state.

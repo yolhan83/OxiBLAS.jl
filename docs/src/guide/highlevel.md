@@ -26,14 +26,14 @@ S = OxiBLAS.svd(randn(40, 20))
 
 | Function | Engine |
 |---|---|
-| `OxiBLAS.lu`, `lu!` | `lu_factor` (dense), `multifrontal_lu` (sparse) |
-| `OxiBLAS.cholesky`, `cholesky!` | `cholesky_factor`, `multifrontal_cholesky` |
-| `OxiBLAS.ldlt`, `bunchkaufman` (and `!`) | `ldlt_factor`, `sparse_ldlt` |
-| `OxiBLAS.qr` (`NoPivot`, `ColumnNorm`, sparse), `qr!`, `lq`, `lq!` | `qr_factor`, `qr_pivoted`, `sparse_qr` |
-| `OxiBLAS.svd`, `svdvals` (and `!`) | `svd_factor`, `singular_values` |
-| `OxiBLAS.eigen`, `eigvals`, `eigvecs`, `eigmax`, `eigmin` | `eigen_hermitian`, `eigen_general`, `eigenvalues` |
-| `OxiBLAS.eigen(A, B)`, `eigvals(A, B)` | `eigen_generalized` or QZ (`eigen_pencil`) |
-| `OxiBLAS.schur(A)`, `schur(A, B)`, `ordschur`, `hessenberg` | `schur_factor`, `qz_factor`, `hessenberg_factor` |
+| `OxiBLAS.lu`, `lu!` | [`lu_factor`](@ref) (dense), [`multifrontal_lu`](@ref) (sparse) |
+| `OxiBLAS.cholesky`, `cholesky!` | [`cholesky_factor`](@ref), [`multifrontal_cholesky`](@ref) |
+| `OxiBLAS.ldlt`, `bunchkaufman` (and `!`) | [`ldlt_factor`](@ref), [`sparse_ldlt`](@ref) |
+| `OxiBLAS.qr` (`NoPivot`, `ColumnNorm`, sparse), `qr!`, `lq`, `lq!` | [`qr_factor`](@ref), [`qr_pivoted`](@ref), [`sparse_qr`](@ref) |
+| `OxiBLAS.svd`, `svdvals` (and `!`) | [`svd_factor`](@ref), [`singular_values`](@ref) |
+| `OxiBLAS.eigen`, `eigvals`, `eigvecs`, `eigmax`, `eigmin` | [`eigen_hermitian`](@ref), [`eigen_general`](@ref), [`eigenvalues`](@ref) |
+| `OxiBLAS.eigen(A, B)`, `eigvals(A, B)` | [`eigen_generalized`](@ref) or QZ ([`eigen_pencil`](@ref)) |
+| `OxiBLAS.schur(A)`, `schur(A, B)`, `ordschur`, `hessenberg` | [`schur_factor`](@ref), [`qz_factor`](@ref), [`hessenberg_factor`](@ref) |
 | `OxiBLAS.factorize` | choice from the structure (see below) |
 | `OxiBLAS.det`, `logdet`, `logabsdet`, `inv`, `rank`, `cond`, `pinv`, `nullspace`, `isposdef` | through the engines; `inv` of a sparse matrix is refused |
 | `OxiBLAS.norm`, `opnorm`, `kron`, `sylvester`, `lyap` | native engines |
@@ -94,6 +94,6 @@ x1 ≈ x2 ≈ y
   raise the standard exception even with `check=false`.
 - **Refused options.**
   - `bunchkaufman(A, true)` (rook pivoting) is not available.
-  - An indefinite `PackedMatrix` has no indefinite factorization.
+  - An indefinite [`PackedMatrix`](@ref) has no indefinite factorization.
 - **No solve.** `Eigen`, `Schur` and `Hessenberg` have no solve primitive, as
   in `LinearAlgebra`.

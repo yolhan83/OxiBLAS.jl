@@ -218,6 +218,12 @@ include("api/linalg_api_sparse.jl")
 include("api/linalg_api_structured.jl")
 include("api/linalg_api_solve.jl")
 # Precompilation workload (PrecompileTools), last: it calls the API above.
+# Docstrings of the exported names defined by one-line or multiple methods.
+include("docstrings/blas.jl")
+include("docstrings/lapack.jl")
+include("docstrings/sparse.jl")
+include("docstrings/structured.jl")
+
 include("precompile.jl")
 
 end

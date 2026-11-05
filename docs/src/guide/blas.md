@@ -29,9 +29,9 @@ kernel_info(Float32)
 - **Parallelism.** It is controlled by `julia --threads=N`, `threaded=false`
   and `GemmConfig(parallel_threshold=...)`. The number of tasks follows the
   size of the product.
-- Variants: `gemm_cache_oblivious!`, `gemm_strassen!`, `gemm_winograd!`
-  (explicitly chosen), `gemm_batched!`, `gemm_strided_batched!`,
-  `gemm_extended!` (generic types).
+- Variants: [`gemm_cache_oblivious!`](@ref), [`gemm_strassen!`](@ref), [`gemm_winograd!`](@ref)
+  (explicitly chosen), [`gemm_batched!`](@ref), [`gemm_strided_batched!`](@ref),
+  [`gemm_extended!`](@ref) (generic types).
 
 ## `OxiBLAS.mul!` and `OxiBLAS.mul`
 
@@ -47,31 +47,31 @@ through the same layer.
 | `axpy!(y, x, α=1)`, `scal!(x, α)` | y ← y + αx ; x ← αx |
 | `copy_vector!(y, x)`, `swap!(x, y)` | copy with snapshot; swap of disjoint vectors |
 | `dotu(x, y)`, `dotc(x, y)` | sum without / with conjugation of the first operand |
-| `dot_kahan`, `dot_pairwise` | compensated and pairwise summation |
-| `dsdot`, `sdsdot` | `Float32` vectors, `Float64` accumulation |
-| `nrm2`, `asum`, `iamax`, `iamin` | scaled Euclidean norm; complex metric \|Re\|+\|Im\| |
-| `rotg`, `rot!`, `rotmg`, `rotmg!`, `rotm!`, `RotmParams` | Givens and modified rotations |
-| `axpy_parallel!`, `scal_parallel!`, `dot_parallel`, `nrm2_parallel`, `asum_parallel` | explicit multithreaded variants |
+| [`dot_kahan`](@ref), [`dot_pairwise`](@ref) | compensated and pairwise summation |
+| [`dsdot`](@ref), [`sdsdot`](@ref) | `Float32` vectors, `Float64` accumulation |
+| [`nrm2`](@ref), [`asum`](@ref), [`iamax`](@ref), [`iamin`](@ref) | scaled Euclidean norm; complex metric \|Re\|+\|Im\| |
+| [`rotg`](@ref), [`rot!`](@ref), [`rotmg`](@ref), [`rotmg!`](@ref), [`rotm!`](@ref), [`RotmParams`](@ref) | Givens and modified rotations |
+| [`axpy_parallel!`](@ref), [`scal_parallel!`](@ref), [`dot_parallel`](@ref), [`nrm2_parallel`](@ref), [`asum_parallel`](@ref) | explicit multithreaded variants |
 
 ## BLAS 2
 
 | Function | Convention |
 |---|---|
 | `gemv!(y, A, x, α=1, β=0; trans=:N)` | y ← α·op(A)·x + β·y |
-| `ger!(A, x, y, α)`, `gerc!` | rank-1 update, yᵀ / yᴴ |
-| `symv!`, `hemv!` | same order as `gemv!`, `uplo=:U` or `:L` |
-| `syr!`, `syr2!`, `her!`, `her2!` | only the selected triangle is modified |
-| `trmv!(x, A; uplo, trans, unit)`, `trsv!` | a unit diagonal is never read |
+| `ger!(A, x, y, α)`, [`gerc!`](@ref) | rank-1 update, yᵀ / yᴴ |
+| [`symv!`](@ref), [`hemv!`](@ref) | same order as [`gemv!`](@ref), `uplo=:U` or `:L` |
+| [`syr!`](@ref), [`syr2!`](@ref), [`her!`](@ref), [`her2!`](@ref) | only the selected triangle is modified |
+| `trmv!(x, A; uplo, trans, unit)`, [`trsv!`](@ref) | a unit diagonal is never read |
 
 ## BLAS 3
 
 | Function | Convention |
 |---|---|
-| `symm!(C, A, B, α, β; side, uplo)`, `hemm!` | A is the structured matrix, side `:L`/`:R` |
-| `trmm!(B, A, α; ...)`, `trsm!` | B is overwritten; `side`, `uplo`, `trans`, `unit` |
-| `syrk!(C, A, α, β; ...)`, `herk!`, `syr2k!`, `her2k!` | only the triangle of C is updated |
+| `symm!(C, A, B, α, β; side, uplo)`, [`hemm!`](@ref) | A is the structured matrix, side `:L`/`:R` |
+| `trmm!(B, A, α; ...)`, [`trsm!`](@ref) | B is overwritten; `side`, `uplo`, `trans`, `unit` |
+| `syrk!(C, A, α, β; ...)`, [`herk!`](@ref), [`syr2k!`](@ref), [`her2k!`](@ref) | only the triangle of C is updated |
 | `gemmt!(C, A, B, α=1, β=0; uplo, transA, transB)` | triangle of α·op(A)·op(B) + β·C |
-| `triangular_workspace` | reusable workspace for TRMM/TRSM |
+| [`triangular_workspace`](@ref) | reusable workspace for TRMM/TRSM |
 
 The structured BLAS 3 routines reuse the GEMM engine and its options
 (`algorithm`, `kernel`, `threaded`, `workspace`, `config`). SYRK, HERK, SYR2K,

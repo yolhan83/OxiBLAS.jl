@@ -1,9 +1,9 @@
 # Tensors
 
-## `einsum` and contractions
+## [`einsum`](@ref) and contractions
 
 `einsum(spec, A...)` evaluates an Einstein notation on dense arrays,
-`SparseTensor`s or sparse matrices. Pairwise contractions go through the
+[`SparseTensor`](@ref)s or sparse matrices. Pairwise contractions go through the
 native GEMM (TTGT).
 
 ```@example tens
@@ -20,13 +20,13 @@ D ≈ C
   order: `:greedy` by default, `:beam`, `:optimal`, or `:none` for the direct
   contraction. A plan is immutable and thread-safe.
 - **In-place evaluation.** `einsum!(C, plan, A...; α, β, workspace)` writes
-  into `C`. Temporaries come from the `EinsumWorkspace`.
-- **Sliced plans.** `plan_einsum_sliced` bounds the memory by slicing the
-  computation; `einsum_layout_report` describes the chosen memory layouts.
-- **Explicit contractions.** `contract(A, B, axesA, axesB)` and `contract!`
+  into `C`. Temporaries come from the [`EinsumWorkspace`](@ref).
+- **Sliced plans.** [`plan_einsum_sliced`](@ref) bounds the memory by slicing the
+  computation; [`einsum_layout_report`](@ref) describes the chosen memory layouts.
+- **Explicit contractions.** `contract(A, B, axesA, axesB)` and [`contract!`](@ref)
   contract the given axes (explicit conjugations).
-- **Specialized products.** `outer_product`, `mode_product(A, U, mode)`,
-  `batched_matmul` and `batched_matmul!`.
+- **Specialized products.** [`outer_product`](@ref), `mode_product(A, U, mode)`,
+  [`batched_matmul`](@ref) and [`batched_matmul!`](@ref).
 
 ## Sparse tensors
 
@@ -41,21 +41,21 @@ size(Y)
 ```
 
 - Sparse × sparse products use a column-wise SpGEMM on the unfoldings.
-- Matrix operands (CSR, CSC, `SparseMatrixCSC`, 2-D `SparseTensor`) stay in
+- Matrix operands (CSR, CSC, `SparseMatrixCSC`, 2-D [`SparseTensor`](@ref)) stay in
   native CSC.
-- `einsum!` into a sparse destination receives the CSC result directly.
-- The result of a sparse computation is a `SparseTensor`.
+- [`einsum!`](@ref) into a sparse destination receives the CSC result directly.
+- The result of a sparse computation is a [`SparseTensor`](@ref).
 
 ## Decompositions
 
 | Function | Result |
 |---|---|
-| `hosvd(A; ranks)` | Tucker (`TuckerFactor`) |
-| `tensor_train(A; maxrank, rtol)` | tensor train (`TensorTrainFactor`) |
-| `cp_als(A, rank)` | CP by alternating least squares (`CPFactor`) |
+| `hosvd(A; ranks)` | Tucker ([`TuckerFactor`](@ref)) |
+| `tensor_train(A; maxrank, rtol)` | tensor train ([`TensorTrainFactor`](@ref)) |
+| `cp_als(A, rank)` | CP by alternating least squares ([`CPFactor`](@ref)) |
 | `reconstruct(F)` | reconstructed tensor |
 
 ## Performance
 
-The high-level suite compares `einsum` with TensorOperations
+The high-level suite compares [`einsum`](@ref) with TensorOperations
 ([Performance](performance.md)).
