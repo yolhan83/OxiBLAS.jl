@@ -196,6 +196,18 @@ function _block(A::SubArray{<:Any,2,<:Any,<:Tuple{AbstractUnitRange,AbstractUnit
     base,r,c,flip=b; I,J=parentindices(A)
     flip ? (base,r[J],c[I],true) : (base,r[I],c[J],false)
 end
+# Column segment A[I, j] and row segment A[i, J] of a matrix (Level 1 kernels
+# on two columns of one matrix, as in Householder QR updates).
+function _block(A::SubArray{<:Any,1,<:Any,<:Tuple{AbstractUnitRange,Integer}})
+    b=_block(parent(A)); b===nothing && return nothing
+    base,r,c,flip=b; I,j=parentindices(A)
+    flip ? (base,r[j:j],c[I],true) : (base,r[I],c[j:j],false)
+end
+function _block(A::SubArray{<:Any,1,<:Any,<:Tuple{Integer,AbstractUnitRange}})
+    b=_block(parent(A)); b===nothing && return nothing
+    base,r,c,flip=b; i,J=parentindices(A)
+    flip ? (base,r[J],c[i:i],true) : (base,r[i:i],c[J],false)
+end
 _block(A)=nothing
 function _mightalias(A,B)
     a=_block(A); b=_block(B)

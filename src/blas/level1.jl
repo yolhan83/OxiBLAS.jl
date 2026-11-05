@@ -10,7 +10,9 @@ end
 function axpy!(y::AbstractVector,x::AbstractVector,α=one(eltype(y)))
     _same_length(x,y);_check_vector_output(y)
     iszero(α) && return y
-    xx=Base.mightalias(x,y) && x!==y ? copy(x) : x
+    # _mightalias: two disjoint column segments of one matrix do not alias
+    # (Base.mightalias said they might, and x was copied at every call).
+    xx=_mightalias(x,y) && x!==y ? copy(x) : x
     @inbounds @simd for i in eachindex(y)
         y[i]=_arithmetic_madd(α,xx[i],y[i])
     end
