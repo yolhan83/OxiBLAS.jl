@@ -168,9 +168,10 @@ function _check_output_layout(C::AbstractMatrix)
             m>s2÷g && n>s1÷g && throw(ArgumentError("output entries overlap"))
         end
     elseif C isa SubArray
-        for idx in parentindices(C)
-            idx isa AbstractVector && !allunique(idx) && throw(ArgumentError("output view contains repeated indices"))
-        end
+        # Recursion over the index tuple, not a loop: the tuple is
+        # heterogeneous (ranges and integers) and a loop variable over it
+        # was boxed (one allocation per Level 1 call on a view).
+        _views_unique(parentindices(C)) || throw(ArgumentError("output view contains repeated indices"))
     elseif C isa Union{Transpose,Adjoint}
         _check_output_layout(parent(C))
     elseif C isa Union{Base.ReshapedArray,Base.PermutedDimsArray}
