@@ -107,6 +107,23 @@ function _pencil_weights(a,b,sa,sb)
     pa*exp(la-largest),pb*exp(lb-largest)
 end
 
+# w[1:hi] -= (ks·S[1:hi,j] - kb·B[1:hi,j])·xj: one contiguous column of S
+# (and B), as in LAPACK trevc.
+@inline function _trevc_update!(w,S,B,ordinary,ks,kb,j,hi,xj)
+    c=ks*xj
+    if ordinary
+        @inbounds @simd for i in 1:hi
+            w[i]=muladd(-S[i,j],c,w[i])
+        end
+    else
+        d=kb*xj
+        @inbounds @simd for i in 1:hi
+            w[i]=muladd(B[i,j],d,muladd(-S[i,j],c,w[i]))
+        end
+    end
+    w
+end
+
 # B === nothing: ordinary eigenvectors (B is the identity, never formed).
 function _pencil_vectors(S,B,alpha,beta;left=false)
     ordinary=B===nothing
@@ -116,6 +133,10 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
     blocks=_schur_blocks(S); X=zeros(C,n,n)
     sa=_finite_scale(S); sb=ordinary ? one(R) : _finite_scale(B)
     Bij(i,j)=ordinary ? (i==j ? one(R) : zero(R)) : B[i,j]
+    # Right eigenvectors are computed column-oriented (w: pending right-hand
+    # sides); Schur blocks are 1×1 or 2×2, the general path stays for others.
+    columnwise=!left && maximum(length,blocks;init=0)<=2
+    w=columnwise ? Vector{C}(undef,n) : C[]
     for (index,block) in enumerate(blocks), col in block
         a,b=alpha[col],beta[col]
         iszero(a) && iszero(b) && throw(ArgumentError("indeterminate singular pencil has no unique eigenvectors"))
@@ -141,6 +162,47 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
             r=hypot(abs(u),abs(v))
             iszero(r) && (u=one(C); r=one(R))
             X[i,col]=u/r; X[j,col]=v/r
+        end
+        if columnwise
+            # Same equations as the row-oriented loop below, summed in
+            # another order: after each solved block, w is updated by the
+            # columns of S above it (contiguous), and the column maximum is
+            # tracked instead of rescanned.
+            fill!(w,zero(C)); xmax=zero(R)
+            for j in block
+                xmax=max(xmax,abs(X[j,col]))
+                _trevc_update!(w,S,B,ordinary,ks,kb,j,first(block)-1,X[j,col])
+            end
+            for k in index-1:-1:1
+                rows=blocks[k]
+                if length(rows)==1
+                    row=first(rows); acc=w[row]
+                    if abs(acc)>0
+                        x1=_small_solve1(C(m(row,row)),acc)
+                        isfinite(x1) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                        X[row,col]=x1; xmax=max(xmax,abs(x1))
+                    end
+                else
+                    r1,r2=first(rows),last(rows); acc1,acc2=w[r1],w[r2]
+                    if max(abs(acc1),abs(acc2))>0
+                        x1,x2=_small_solve2(C(m(r1,r1)),C(m(r2,r1)),C(m(r1,r2)),C(m(r2,r2)),acc1,acc2)
+                        isfinite(x1) && isfinite(x2) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                        X[r1,col]=x1; X[r2,col]=x2; xmax=max(xmax,abs(x1),abs(x2))
+                    end
+                end
+                # Rescale the computed part and the pending right-hand sides
+                # (w is linear in x), preserving the equations.
+                if xmax>1
+                    for q in first(rows):last(block); X[q,col]/=xmax; end
+                    for q in 1:first(rows)-1; w[q]/=xmax; end
+                    xmax=one(R)
+                end
+                for j in rows
+                    xj=X[j,col]; iszero(xj) || _trevc_update!(w,S,B,ordinary,ks,kb,j,first(rows)-1,xj)
+                end
+            end
+            t=nrm2(view(X,:,col)); view(X,:,col)./=t
+            continue
         end
         order=left ? (index+1:length(blocks)) : (index-1:-1:1)
         for k in order
