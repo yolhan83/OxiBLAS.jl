@@ -25,7 +25,7 @@ function solve_transposed(F::CompleteLUFactor{T},b::AbstractVecOrMat{T};trans=:C
     n=_square(F.factors); Base.require_one_based_indexing(b); tr=_trans_kind(trans)
     tr==0 && return solve(F,b)
     size(b,1)==n || throw(DimensionMismatch("transpose solve dimensions differ")); F.info==0 || throw(SingularException(F.info))
-    X=ndims(b)==1 ? reshape(copy(b[F.q]),n,1) : copy(b[F.q,:])
+    X=ndims(b)==1 ? reshape(b[F.q],n,1) : b[F.q,:]
     trsm!(X,F.factors;uplo=:U,trans); trsm!(X,F.factors;uplo=:L,unit=true,trans)
     result=similar(X)
     for j in axes(X,2), i in 1:n

@@ -534,12 +534,12 @@ reads A/B. Algorithms: reference, blocked, packed, register, simd, auto.
 Explicit unavailable ISA requests throw before changing C.
 """
 function gemm!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},
-               α=1,β=0; transA=:N,transB=:N,algorithm=:auto,kernel=:auto,
+               α0=1,β0=0; transA=:N,transB=:N,algorithm=:auto,kernel=:auto,
                threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
     isconcretetype(T) || throw(ArgumentError("a concrete native scalar type is required"))
     Aop,Bop=_op(A,transA),_op(B,transB)
     m,n,k=_gemm_dims(C,Aop,Bop)
-    α,β=convert(T,α),convert(T,β)
+    α,β=convert(T,α0),convert(T,β0)
     algorithm in (:auto,:reference,:blocked,:packed,:register,:simd) || throw(ArgumentError("unknown algorithm $algorithm"))
     kind=_kernel_kind(kernel)
     (m==0 || n==0) && return C

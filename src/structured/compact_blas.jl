@@ -107,13 +107,13 @@ function _gbmv_direct!(y,A,x,α,rows,n)
     end
     nothing
 end
-function gbmv!(y::AbstractVector{T},P::BandedMatrix{T},x::AbstractVector{T},α=one(T),β=zero(T);trans=:N,kernel=:auto,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat}
+function gbmv!(y::AbstractVector{T},P::BandedMatrix{T},x::AbstractVector{T},α0=one(T),β0=zero(T);trans=:N,kernel=:auto,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     _pkcheck(P,:general); tr=_trans_kind(trans); kind=_compact_kind(T,kernel)
     Base.require_one_based_indexing(x,y); _check_vector_output(y)
     m,n=size(P)
     length(x)==(tr==0 ? n : m) && length(y)==(tr==0 ? m : n) || throw(DimensionMismatch("GBMV dimensions differ"))
-    α,β=convert(T,α),convert(T,β)
+    α,β=convert(T,α0),convert(T,β0)
     (iszero(α) || m==0 || n==0) && return _scale!(y,β)
     A=Base.mightalias(P,y) ? _compact_copy(P) : P
     xx=Base.mightalias(x,y) ? copy(x) : x
@@ -150,7 +150,7 @@ function gbmv!(y::AbstractVector{T},P::BandedMatrix{T},x::AbstractVector{T},α=o
     y
 end
 
-function _compact_symmv!(y::AbstractVector{T},P,x::AbstractVector{T},α,β,::Val{H};kernel=:auto,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat,H}
+function _compact_symmv!(y::AbstractVector{T},P,x::AbstractVector{T},α0,β0,::Val{H};kernel=:auto,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat,H}
     threaded=threaded && generic_threadsafe(T)
     _pkcheck(P,H ? :hermitian : :symmetric)
     eltype(P)===T || throw(ArgumentError("compact storage and vector element types must agree"))
@@ -160,7 +160,7 @@ function _compact_symmv!(y::AbstractVector{T},P,x::AbstractVector{T},α,β,::Val
     kind=_compact_kind(T,kernel)
     k=P isa BandedMatrix ? min(n,max(P.kl,P.ku)) : n
     workers=_l2_workers(T,n,Float64(n)*(2k+1),_symmetric_cost(T)*(P isa BandedMatrix ? Float64(n)*(k+1) : Float64(n)*(n+1)/2),threaded,parallel_threshold)
-    α,β=convert(T,α),convert(T,β)
+    α,β=convert(T,α0),convert(T,β0)
     (iszero(α) || n==0) && return _scale!(y,β)
     A=Base.mightalias(P,y) ? _compact_copy(P) : P
     xx=Base.mightalias(x,y) ? copy(x) : x

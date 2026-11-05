@@ -276,12 +276,12 @@ COOMatrix(A::ExtendedSparse)=COOMatrix(CSRMatrix(A))
 for Format in (:DIAMatrix,:ELLMatrix,:BSRMatrix,:BSCMatrix,:HYBMatrix,:SELLMatrix)
     @eval $Format(A::Union{CSCMatrix,COOMatrix,ExtendedSparse};kwargs...)=$Format(CSRMatrix(A);kwargs...)
 end
-function sparse_mul!(y::AbstractVector{T},A::ExtendedSparse,x::AbstractVector{T},alpha=one(T),beta=zero(T);trans=:N,threaded=true,parallel_threshold=262144) where T
+function sparse_mul!(y::AbstractVector{T},A::ExtendedSparse,x::AbstractVector{T},alpha0=one(T),beta0=zero(T);trans=:N,threaded=true,parallel_threshold=262144) where T
     Base.require_one_based_indexing(y,x); _check_vector_output(y); tr=_trans_kind(trans)
     size(_op(A,trans))==(length(y),length(x)) || throw(DimensionMismatch("sparse multiply dimensions differ"))
     eltype(A)===T || throw(ArgumentError("sparse element types must agree"))
     Base.mightalias(y,A) && throw(ArgumentError("output must not alias sparse storage"))
-    alpha,beta=convert(T,alpha),convert(T,beta)
+    alpha,beta=convert(T,alpha0),convert(T,beta0)
     iszero(alpha) && return _scale!(y,beta)
     threaded=threaded && generic_threadsafe(T)
     if threaded && Threads.nthreads()>1 && length(x)*Float64(length(y))>=parallel_threshold

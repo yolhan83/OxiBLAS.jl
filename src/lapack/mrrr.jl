@@ -91,8 +91,13 @@ function _rrr_refine(F,index,mu,error,diameter,pivmin)
     end
     lo+(hi-lo)/2,max((hi-lo)/2,floatmin(R))
 end
-function _rrr_twist(F,mu,pivmin)
-    R=eltype(F.d); n=length(F.d); s=zeros(R,n); p=zeros(R,n); lp=zeros(R,max(0,n-1)); um=similar(lp)
+# Twisted factorization buffers of one block, reused by every eigenvector
+# (and every Rayleigh correction) of the block.
+_rrr_twist_buffers(R,n)=(;s=zeros(R,n),p=zeros(R,n),lp=zeros(R,max(0,n-1)),um=zeros(R,max(0,n-1)),z=zeros(R,n))
+# Writes the normalized twisted vector to buf.z and returns the Rayleigh
+# correction.
+function _rrr_twist!(buf,F,mu,pivmin)
+    R=eltype(F.d); n=length(F.d); s,p,lp,um,z=buf.s,buf.p,buf.lp,buf.um,buf.z
     s[1]=-mu
     for i in 1:n-1
         dp=_pivot_floor(F.d[i]+s[i],pivmin); lp[i]=F.ld[i]/dp; s[i+1]=F.lld[i]*(s[i]/dp)-mu
@@ -102,7 +107,12 @@ function _rrr_twist(F,mu,pivmin)
         dm=_pivot_floor(F.lld[i]+p[i+1],pivmin); tmp=F.d[i]/dm; um[i]=F.l[i]*tmp; p[i]=p[i+1]*tmp-mu
     end
     all(isfinite,s) && all(isfinite,p) || throw(ConvergenceError(:rrr_twist,0,1:n))
-    twist=argmin(abs.(s.+p.+mu)); gamma=s[twist]+p[twist]+mu; z=zeros(R,n); z[twist]=one(R)
+    # argmin(abs.(s.+p.+mu)), first minimum, without the temporaries.
+    twist=1; best=abs(s[1]+p[1]+mu)
+    for i in 2:n
+        v=abs(s[i]+p[i]+mu); v<best && (twist=i; best=v)
+    end
+    gamma=s[twist]+p[twist]+mu; fill!(z,zero(R)); z[twist]=one(R)
     for i in twist-1:-1:1
         abs(lp[i])>1 && abs(z[i+1])>floatmax(R)/abs(lp[i]) && (z ./= abs(lp[i]))
         z[i]=-lp[i]*z[i+1]
@@ -113,7 +123,8 @@ function _rrr_twist(F,mu,pivmin)
     end
     norm=nrm2(z); isfinite(norm) && norm>0 || throw(ConvergenceError(:rrr_vector,0,1:n))
     correction=gamma*(z[twist]/norm)^2
-    z./norm,correction
+    z./=norm
+    correction
 end
 function _mrrr_block(d,e,maxdepth)
     R=eltype(d); n=length(d)
@@ -126,7 +137,7 @@ function _mrrr_block(d,e,maxdepth)
         sigma-=diameter*(one(R)/20)*attempt+pivmin; representation=_rrr_factor(d,e,sigma,pivmin)
     end
     all(x->isfinite(x) && x>0,representation.d) || throw(ConvergenceError(:rrr_base,40,1:n))
-    w=values.-sigma; errors=fill(eps(R)*diameter+pivmin,n); vectors=zeros(R,n,n)
+    w=values.-sigma; errors=fill(eps(R)*diameter+pivmin,n); vectors=zeros(R,n,n); twistbuf=_rrr_twist_buffers(R,n)
     stack=[(representation,sigma,1,n,0)]
     while !isempty(stack)
         F,shift,first,last,depth=pop!(stack)
@@ -155,21 +166,24 @@ function _mrrr_block(d,e,maxdepth)
                     end
                 end
                 if child!==nothing
-                    w[j:k].-=tau; push!(stack,(child,shift+tau,j,k,depth+1)); j=k+1; continue
+                    for i in j:k
+                        w[i]-=tau
+                    end
+                    push!(stack,(child,shift+tau,j,k,depth+1)); j=k+1; continue
                 end
                 # Coincident-to-roundoff cluster: use an independent native QR
                 # block solution rather than inventing dependent twisted vectors.
                 fallback=eigen_tridiagonal(d,e)
                 vectors[:,j:k]=fallback.vectors[:,j:k]; values[j:k]=fallback.values[j:k]
             else
-                mu=w[j]; error=errors[j]; vector,correction=_rrr_twist(F,mu,pivmin)
+                mu=w[j]; error=errors[j]; correction=_rrr_twist!(twistbuf,F,mu,pivmin)
                 for _ in 1:8
                     abs(correction)<=2eps(R)*max(abs(mu),floatmin(R)) && break
                     next=mu+correction
                     abs(next-w[j])<=error+eps(R)*diameter || break
-                    mu=next; vector,correction=_rrr_twist(F,mu,pivmin)
+                    mu=next; correction=_rrr_twist!(twistbuf,F,mu,pivmin)
                 end
-                vectors[:,j]=vector; values[j]=shift+mu
+                copyto!(view(vectors,:,j),twistbuf.z); values[j]=shift+mu
             end
             j=k+1
         end

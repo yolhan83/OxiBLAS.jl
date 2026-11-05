@@ -42,7 +42,7 @@ function fgmres(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),
         if any(iszero(H[i,i]) for i in 1:used)
             return (;x,converged=false,iterations,residual,reason=:breakdown)
         end
-        y=copy(g[1:used]); trsv!(y,view(H,1:used,1:used);uplo=:U)
+        y=g[1:used]; trsv!(y,view(H,1:used,1:used);uplo=:U)
         for j in 1:used
             axpy!(x,view(Z,:,j),y[j])
         end
@@ -233,7 +233,7 @@ function idrs(A::AbstractMatrix{T},b::AbstractVector{T};s=4,x0=zeros(T,length(b)
         f=T[dotc(view(P,:,j),r) for j in 1:q]
         for k in 1:q
             any(iszero(M[j,j]) for j in k:q) && return (;x,converged=false,iterations,residual,reason=:breakdown)
-            c=copy(f[k:q]); trsv!(c,view(M,k:q,k:q);uplo=:L); copyto!(v,r)
+            c=f[k:q]; trsv!(c,view(M,k:q,k:q);uplo=:L); copyto!(v,r)
             for j in k:q
                 axpy!(v,view(G,:,j),-c[j-k+1])
             end

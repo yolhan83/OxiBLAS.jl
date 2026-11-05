@@ -72,7 +72,7 @@ end
 function solve(F::SparseLDLFactor{T},b::AbstractVecOrMat{T};trans=:N,threaded=true) where T
     n=length(F.p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LDL RHS differs"))
     tr=_trans_kind(trans); conjugated=T<:Complex && (F.hermitian ? tr==1 : tr==2)
-    X=ndims(b)==1 ? reshape(copy(b[F.p]),n,1) : copy(b[F.p,:]); conjugated && (X .= conj.(X))
+    X=ndims(b)==1 ? reshape(b[F.p],n,1) : b[F.p,:]; conjugated && (X .= conj.(X))
     workers=_operation_workers(size(X,2),Float64(length(F.L.values))*size(X,2),threaded,262144)
     _foreach_range(size(X,2),workers) do columns,_
         for rhs in columns
@@ -185,7 +185,7 @@ end
 function _sparse_lu_solve(L,U,p,q,b;trans=:N)
     n=length(p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LU RHS differs"))
     tr=_trans_kind(trans); input=tr==0 ? p : q; output=tr==0 ? q : p
-    B=ndims(b)==1 ? copy(b[input]) : copy(b[input,:])
+    B=ndims(b)==1 ? b[input] : b[input,:]
     X=tr==0 ? sparse_triangular_solve(U,sparse_triangular_solve(L,B;uplo=:L,unit=true);uplo=:U) :
               sparse_triangular_solve(L,sparse_triangular_solve(U,B;uplo=:U,trans);uplo=:L,unit=true,trans)
     result=similar(X)

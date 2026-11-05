@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
-function _block_residual!(R,A,X,B,product)
+# R ← B - A X; the column norms go to `norms` (reused across iterations).
+function _block_residual!(norms,R,A,X,B,product)
     _native_mm!(product,A,X)
     for i in eachindex(R,B)
         R[i]=B[i]-product[i]
     end
-    [nrm2(view(R,:,j)) for j in axes(R,2)]
+    for j in axes(R,2)
+        norms[j]=nrm2(view(R,:,j))
+    end
+    norms
 end
+_within(residuals,targets)=all(i->residuals[i]<=targets[i],eachindex(residuals,targets))
 function _block_targets(B,rtol,atol)
     [max(atol,rtol*nrm2(view(B,:,j))) for j in axes(B,2)]
 end
@@ -32,26 +37,29 @@ function block_cg(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B)),
     n=_square(A); Base.require_one_based_indexing(B,x0)
     size(B,1)==n && size(x0)==size(B) && min(maxiter,rtol,atol)>=0 || throw(ArgumentError("invalid block CG dimensions/options"))
     _check_preconditioner(preconditioner,n); targets=_block_targets(B,rtol,atol); X=copy(x0); R=similar(B); product=similar(B); s=size(B,2)
-    residuals=_block_residual!(R,A,X,B,product); iterations=0
-    all(residuals.<=targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+    residuals=_block_residual!(similar(targets),R,A,X,B,product); iterations=0
+    _within(residuals,targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
     Z=similar(B)
     for j in 1:s
         _precondition!(view(Z,:,j),view(R,:,j),preconditioner)
     end
-    P=copy(Z); gram=_mm(adjoint(R),Z)
+    # n×s and s×s buffers reused by every iteration; P and Pnext, gram and
+    # next swap roles.
+    P=copy(Z); Pnext=similar(B); gram=_mm(adjoint(R),Z); next=similar(gram); H=similar(gram)
     for iteration in 1:maxiter
-        _native_mm!(product,A,P); H=_mm(adjoint(P),product)
+        _native_mm!(product,A,P); gemm!(H,adjoint(P),product)
         if !_block_full_rank(H) || !_block_full_rank(gram)
             return merge(_block_fallback(A,B,X,targets,preconditioner,max(0,maxiter-iterations),pcg),(;iterations))
         end
-        alpha=solve(lu_factor(H;threaded=false),gram); X .+= _mm(P,alpha)
-        residuals=_block_residual!(R,A,X,B,product); iterations=iteration
-        all(residuals.<=targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+        alpha=solve(lu_factor(H;threaded=false),gram); gemm!(X,P,alpha,one(T),one(T))
+        _block_residual!(residuals,R,A,X,B,product); iterations=iteration
+        _within(residuals,targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
         for j in 1:s
             _precondition!(view(Z,:,j),view(R,:,j),preconditioner)
         end
-        next=_mm(adjoint(R),Z); beta=solve(lu_factor(gram;threaded=false),next)
-        P=Z+_mm(P,beta); gram=next
+        gemm!(next,adjoint(R),Z); beta=solve(lu_factor(gram;threaded=false),next)
+        copyto!(Pnext,Z); gemm!(Pnext,P,beta,one(T),one(T))
+        P,Pnext=Pnext,P; gram,next=next,gram
     end
     (;x=X,converged=false,residuals,iterations,fallback=false)
 end
@@ -67,38 +75,47 @@ function block_gmres(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B
     size(B,1)==n && size(B)==size(x0) && min(maxiter,rtol,atol)>=0 && restart>=1 || throw(ArgumentError("invalid block GMRES dimensions/options"))
     preconditioner isa Function || _check_preconditioner(preconditioner,n)
     s=size(B,2); targets=_block_targets(B,rtol,atol); X=copy(x0); R=similar(B); product=similar(B); iterations=0
-    residuals=_block_residual!(R,A,X,B,product)
-    all(residuals.<=targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+    residuals=_block_residual!(similar(targets),R,A,X,B,product)
+    _within(residuals,targets) && return (;x=X,converged=true,residuals,iterations,fallback=false)
+    # Krylov bases, Hessenberg matrix and n×s work blocks sized once for the
+    # longest cycle and reused by every restart.
+    qmax=min(restart,maxiter); Vbuf=zeros(T,n,(qmax+1)*s); Zbuf=zeros(T,n,qmax*s); Hbuf=zeros(T,(qmax+1)*s,qmax*s)
+    W=similar(B); hij=similar(B,s,s); base=similar(X); trial=similar(X)
     while iterations<maxiter
         if n<s || !_block_full_rank(R)
             return merge(_block_fallback(A,B,X,targets,preconditioner,(maxiter-iterations)*s,fgmres),(;iterations))
         end
-        q=min(restart,maxiter-iterations); V=zeros(T,n,(q+1)*s); Z=zeros(T,n,q*s); H=zeros(T,(q+1)*s,q*s)
-        F=qr_factor(R;threaded=false); V[:,1:s]=qr_q(F;columns=s,threaded=false); S=copy(F.R[1:s,:]); base=copy(X); trial=copy(X)
+        q=min(restart,maxiter-iterations)
+        V=view(Vbuf,:,1:(q+1)*s); Z=view(Zbuf,:,1:q*s); H=view(Hbuf,1:(q+1)*s,1:q*s)
+        fill!(V,zero(T)); fill!(Z,zero(T)); fill!(H,zero(T))
+        F=qr_factor(R;threaded=false); V[:,1:s]=qr_q(F;columns=s,threaded=false); S=F.R[1:s,:]; copyto!(base,X); copyto!(trial,X)
         for j in 1:q
             current=(j-1)*s+1:j*s; following=j*s+1:(j+1)*s
             for (k,col) in enumerate(current)
                 _apply_preconditioner!(view(Z,:,col),view(V,:,col),preconditioner,iterations*s+k)
             end
-            W=Matrix{T}(undef,n,s); _native_mm!(W,A,view(Z,:,current))
+            _native_mm!(W,A,view(Z,:,current))
             for _ in 1:2, i in 1:j
-                rows=(i-1)*s+1:i*s; hij=_mm(adjoint(view(V,:,rows)),W)
-                H[rows,current].+=hij; W .-= _mm(view(V,:,rows),hij)
+                rows=(i-1)*s+1:i*s; gemm!(hij,adjoint(view(V,:,rows)),W)
+                for c in 1:s, r in 1:s
+                    H[rows[r],current[c]]+=hij[r,c]
+                end
+                gemm!(W,view(V,:,rows),hij,-one(T),one(T))
             end
             fullrank=n>=(j+1)*s && _block_full_rank(W); factor=qr_factor(W;threaded=false)
             H[following,current]=factor.R[1:s,:]
             fullrank && (V[:,following]=qr_q(factor;columns=s,threaded=false))
             right=zeros(T,(j+1)*s,s); right[1:s,:]=S
             projected=complete_orthogonal(view(H,1:(j+1)*s,1:j*s);threaded=false)
-            coefficients=solve(projected,right); trial=base+_mm(view(Z,:,1:j*s),coefficients)
-            residuals=_block_residual!(R,A,trial,B,product); iterations+=1
-            all(residuals.<=targets) && return (;x=trial,converged=true,residuals,iterations,fallback=false)
+            coefficients=solve(projected,right); copyto!(trial,base); gemm!(trial,view(Z,:,1:j*s),coefficients,one(T),one(T))
+            _block_residual!(residuals,R,A,trial,B,product); iterations+=1
+            _within(residuals,targets) && return (;x=trial,converged=true,residuals,iterations,fallback=false)
             iterations>=maxiter && return (;x=trial,converged=false,residuals,iterations,fallback=false)
             if !fullrank
                 return merge(_block_fallback(A,B,trial,targets,preconditioner,(maxiter-iterations)*s,fgmres),(;iterations))
             end
         end
-        X=trial
+        copyto!(X,trial)
     end
     (;x=X,converged=false,residuals,iterations,fallback=false)
 end

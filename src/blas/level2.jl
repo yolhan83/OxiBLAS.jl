@@ -20,7 +20,7 @@ end
 # 30 GB/s for complex, against about 125 GB/s for Level 1, and keeps scaling
 # to 18 workers (complex 4096: 6-7x).
 _symmetric_cost(::Type{T}) where T=(T<:Complex ? 4 : 2)*sizeof(T)
-function gemv!(y::AbstractVector{T},A::AbstractMatrix{T},x::AbstractVector{T},α=one(T),β=zero(T);trans=:N,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat}
+function gemv!(y::AbstractVector{T},A::AbstractMatrix{T},x::AbstractVector{T},α0=one(T),β0=zero(T);trans=:N,threaded=true,parallel_threshold=nothing) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     AA=_op(A,trans)
     Base.require_one_based_indexing(y,AA,x)
@@ -28,7 +28,7 @@ function gemv!(y::AbstractVector{T},A::AbstractMatrix{T},x::AbstractVector{T},α
     _check_vector_output(y)
     work=Float64(length(y))*length(x)
     workers=_l2_workers(T,length(y),work,sizeof(T)*work,threaded,parallel_threshold)
-    α,β=convert(T,α),convert(T,β)
+    α,β=convert(T,α0),convert(T,β0)
     (iszero(α) || isempty(x)) && return _scale!(y,β)
     aa=Base.mightalias(y,AA) ? copy(AA) : AA
     xx=Base.mightalias(y,x) ? copy(x) : x
@@ -202,14 +202,14 @@ function _symmetric_parallel!(f,y,beta,n,k,upper,workers)
     end
     y
 end
-function _symv!(y,A,x,α,β,uplo,hermitian;threaded=true,parallel_threshold=nothing)
+function _symv!(y,A,x,α0,β0,uplo,hermitian;threaded=true,parallel_threshold=nothing)
     threaded=threaded && generic_threadsafe(eltype(y))
     n=_square(A); upper=_uplo(uplo)
     length(y)==length(x)==n || throw(DimensionMismatch("symmetric GEMV dimensions differ"))
     Base.require_one_based_indexing(x,y)
     _check_vector_output(y)
     workers=_l2_workers(eltype(y),n,Float64(n)*n,_symmetric_cost(eltype(y))*Float64(n)*(n+1)/2,threaded,parallel_threshold)
-    α,β=convert(eltype(y),α),convert(eltype(y),β)
+    α,β=convert(eltype(y),α0),convert(eltype(y),β0)
     (iszero(α) || n==0) && return _scale!(y,β)
     AA=Base.mightalias(A,y) ? _symmetric_snapshot(A,upper,hermitian) : A
     xx=Base.mightalias(x,y) ? copy(x) : x

@@ -48,11 +48,11 @@ function sparse_mul!(y::AbstractVector{T},A::CSRMatrix{T},x::AbstractVector{T},�
     Base.require_one_based_indexing(y,x)
     _check_vector_output(y)
     parallel_threshold>=0 || throw(ArgumentError("negative parallel threshold"))
-    α,β=convert(T,α),convert(T,β)
+    a,b=convert(T,α),convert(T,β)    # new names: a reassigned argument captured by the closures below would be boxed
     (Base.mightalias(y,A.values) || Base.mightalias(y,A.rowptr) || Base.mightalias(y,A.colind)) && throw(ArgumentError("output must not alias CSR storage"))
-    (iszero(α) || isempty(x)) && return _scale!(y,β)
+    (iszero(a) || isempty(x)) && return _scale!(y,b)
     xx=Base.mightalias(y,x) ? copy(x) : x
-    _scale!(y,β)
+    _scale!(y,b)
     if trans in (:N,'N',:n,'n')
         workers=_operation_workers(A.m,length(A.values),threaded,parallel_threshold)
         _foreach_range(A.m,workers) do rows,_
@@ -61,7 +61,7 @@ function sparse_mul!(y::AbstractVector{T},A::CSRMatrix{T},x::AbstractVector{T},�
                 for p in A.rowptr[i]:A.rowptr[i+1]-1
                     s+=A.values[p]*xx[A.colind[p]]
                 end
-                y[i]+=α*s
+                y[i]+=a*s
             end
         end
     else
@@ -75,12 +75,12 @@ function sparse_mul!(y::AbstractVector{T},A::CSRMatrix{T},x::AbstractVector{T},�
                     for p in C.colptr[j]:C.colptr[j+1]-1
                         s+=(conjugate ? conj(C.values[p]) : C.values[p])*xx[C.rowind[p]]
                     end
-                    y[j]+=α*s
+                    y[j]+=a*s
                 end
             end
         else
             @inbounds for i in 1:A.m, p in A.rowptr[i]:A.rowptr[i+1]-1
-                y[A.colind[p]]+=α*(conjugate ? conj(A.values[p]) : A.values[p])*xx[i]
+                y[A.colind[p]]+=a*(conjugate ? conj(A.values[p]) : A.values[p])*xx[i]
             end
         end
     end

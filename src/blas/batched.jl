@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # All batches are prepared before the first output write. Outer parallelism
 # owns one workspace per task and always disables nested GEMM parallelism.
-function _batched_execute!(Cs,As,Bs,α,β;algorithm=:auto,kernel=:auto,threaded=true,
+function _batched_execute!(Cs,As,Bs,α0,β0;algorithm=:auto,kernel=:auto,threaded=true,
                            workspace=nothing,config=nothing,batch_parallel_threshold=nothing)
     isempty(Cs) && return Cs
     T=eltype(first(Cs)); T<:GenericFloat || throw(ArgumentError("unsupported batch element type"))
-    !(T<:NativeFloat) && return _generic_batched_execute!(Cs,As,Bs,α,β;algorithm,kernel,threaded,workspace,config,batch_parallel_threshold)
+    !(T<:NativeFloat) && return _generic_batched_execute!(Cs,As,Bs,α0,β0;algorithm,kernel,threaded,workspace,config,batch_parallel_threshold)
     cfg=config===nothing ? GemmConfig(T) : config
     threshold=batch_parallel_threshold===nothing ? cfg.parallel_threshold : batch_parallel_threshold
     threshold>=0 || throw(ArgumentError("negative batch parallel threshold"))
-    α,β=convert(T,α),convert(T,β)
+    α,β=convert(T,α0),convert(T,β0)
     mm=nn=kk=0; work=0.0
     for i in eachindex(Cs)
         eltype(Cs[i])===eltype(As[i])===eltype(Bs[i])===T || throw(ArgumentError("batch element types must agree"))

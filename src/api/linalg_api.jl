@@ -94,6 +94,21 @@ function _rowperm!(X::AbstractVecOrMat,p::AbstractVector{Int},inverse::Bool)
     X
 end
 
+# The same row permutation from the LAPACK interchange sequence (laswp):
+# applying pivots[j] in order gives X[p,:], in reverse order its inverse.
+# In place, no buffer.
+function _rowswap!(X::AbstractVecOrMat,pivots::AbstractVector{Int},inverse::Bool)
+    @inbounds for col in axes(X,2)
+        c=view(X,:,col)
+        for k in eachindex(pivots)
+            j=inverse ? length(pivots)+1-k : k
+            q=pivots[j]
+            q!=j && ((c[j],c[q])=(c[q],c[j]))
+        end
+    end
+    X
+end
+
 _trisolve!(X::AbstractVector,A,uplo,trans,unit)=trsv!(X,A;uplo,trans,unit)
 _trisolve!(X::AbstractMatrix,A,uplo,trans,unit)=trsm!(X,A;uplo,trans,unit)
 
@@ -153,7 +168,7 @@ end
 function _LA.ldiv!(F::LU{T,<:LUFactor},B::AbstractVecOrMat) where T
     n,E=_lu_dense_ready(F); _check_rows(F,B,n)
     _apply_split!(T,B) do X
-        _rowperm!(X,E.p,false)
+        _rowswap!(X,E.pivots,false)
         _trisolve!(X,E.factors,:L,:N,true); _trisolve!(X,E.factors,:U,:N,false)
     end
 end
@@ -163,7 +178,7 @@ for (W,tr) in ((:_AdjF,:(:C)),(:_TrF,:(:T)))
         n,E=_lu_dense_ready(parent(Fw)); _check_rows(Fw,B,n)
         _apply_split!(T,B) do X
             _trisolve!(X,E.factors,:U,$tr,false); _trisolve!(X,E.factors,:L,$tr,true)
-            _rowperm!(X,E.p,true)
+            _rowswap!(X,E.pivots,true)
         end
     end
 end
@@ -361,7 +376,7 @@ _engine_solve(E::LDLFactor,X)=solve(E,X)
 function _LA.ldiv!(F::_LDLTypes,B::AbstractVecOrMat)
     E=_eng(F); _check_rows(F,B)
     _apply_split!(eltype(F),B) do X
-        copyto!(X,_engine_solve(E,X))
+        E isa LDLFactor ? _ldl_solve!(E,X) : copyto!(X,_engine_solve(E,X))
     end
 end
 function _LA.logabsdet(F::Union{BunchKaufman{T,<:LDLFactor},LDLt{T,<:LDLFactor}}) where T

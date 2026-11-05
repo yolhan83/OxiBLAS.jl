@@ -71,9 +71,11 @@ function matrix_log(A::AbstractMatrix{T};maxiter=200,rtol=8eps(real(T)),threaded
         B=_triangular_sqrt(B); scaling+=1
     end
     X=_right_solve(B-Iden,B+Iden); X2=_mm(X,X;threaded); term=copy(X); result=copy(X); converged=iszero(matrix_norm(term,:one))
+    spare=similar(term)   # term and spare swap roles: no n×n allocation per term
     for k in 1:maxiter
-        term=_mm(term,X2;threaded); update=term./(2k+1); result .+= update
-        if matrix_norm(update,:one)<=rtol*max(floatmin(real(T)),matrix_norm(result,:one))
+        gemm!(spare,term,X2;threaded); term,spare=spare,term
+        c=2k+1; result .+= term./c          # fused: no temporary
+        if matrix_norm(term,:one)/c<=rtol*max(floatmin(real(T)),matrix_norm(result,:one))
             converged=true; break
         end
     end
@@ -136,7 +138,7 @@ function frechet_matrix(f,A::AbstractMatrix{T},E::AbstractMatrix{T};kwargs...) w
     size(E)==size(A) || throw(DimensionMismatch("Frechet direction dimensions differ"))
     B=zeros(T,2n,2n); B[1:n,1:n]=A; B[n+1:2n,n+1:2n]=A; B[1:n,n+1:2n]=E
     F=f(B;kwargs...)
-    (;value=copy(F[1:n,1:n]),derivative=copy(F[1:n,n+1:2n]))
+    (;value=F[1:n,1:n],derivative=F[1:n,n+1:2n])
 end
 frechet_exp(A,E;kwargs...)=frechet_matrix(matrix_exp,A,E;kwargs...)
 frechet_log(A,E;kwargs...)=frechet_matrix(matrix_log,A,E;kwargs...)

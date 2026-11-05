@@ -808,8 +808,8 @@ function tensor_train(A::AbstractArray{T,N};maxrank=typemax(Int),rtol=zero(real(
         while rank>1 && discarded+abs2(S.S[rank])<=threshold
             discarded+=abs2(S.S[rank]); rank-=1
         end
-        push!(cores,reshape(copy(S.U[:,1:rank]),previous,size(A,d),rank))
-        rest=copy(S.Vt[1:rank,:])
+        push!(cores,reshape(S.U[:,1:rank],previous,size(A,d),rank))
+        rest=S.Vt[1:rank,:]
         for j in axes(rest,2), i in axes(rest,1)
             rest[i,j]*=S.S[i]
         end
@@ -864,6 +864,7 @@ function cp_als(A::AbstractArray{T,N},rank::Integer;initial=nothing,maxiter=100,
     end
     all(size(factors[d])==(size(A,d),rank) for d in 1:N) || throw(DimensionMismatch("CP factor shape differs"))
     norm=nrm2(A); previous=R(Inf); error=R(Inf); iterations=0; reason=:maxiter
+    G=Matrix{T}(undef,rank,rank); gram=similar(G)   # rank×rank, reused by every mode and sweep
     for iteration in 1:maxiter
         for d in 1:N
             others=setdiff(collect(1:N),[d]); shape=Tuple(size(A,k) for k in others)
@@ -875,10 +876,13 @@ function cp_als(A::AbstractArray{T,N},rank::Integer;initial=nothing,maxiter=100,
                 end
                 K[linear,r]=v
             end
-            G=ones(T,rank,rank)
+            fill!(G,one(T))
             for k in others
-                gram=Matrix{T}(undef,rank,rank); gemm!(gram,transpose(factors[k]),conj.(factors[k]);threaded)
-                G .*= gram
+                # transpose(F)*conj(F) = conj(F'F): one product, no conjugated copy of F.
+                gemm!(gram,adjoint(factors[k]),factors[k];threaded)
+                for j in 1:rank, i in 1:rank
+                    G[i,j]*=conj(gram[i,j])
+                end
             end
             scale=maximum(abs,G;init=one(R))
             for r in 1:rank

@@ -70,13 +70,17 @@ function iram(A::AbstractMatrix{T};nev=1,subspace=min(size(A,1),max(20,2nev+4)),
     norm=nrm2(initial); norm>0 && isfinite(norm) || throw(ArgumentError("finite nonzero IRAM start required"))
     m=subspace; V=zeros(C,n,m+1); H=zeros(C,m+1,m); work=zeros(C,n); V[:,1]=initial./norm
     used=_arnoldi_expand!(V,H,A,1,m,work); iterations=used
+    rotated=Matrix{C}(undef,n,m); oldresidual=zeros(C,n)   # reused by every restart
     for restart in 0:maxrestarts
         result,values,order=_arnoldi_ritz(A,V,H,used,nev,which,rtol,work)
         if result.converged || restart==maxrestarts || used<m || nev==m
             return merge(result,(;iterations,restarts=restart,reason=result.converged ? :converged : used<m ? :invariant_subspace : :maxrestarts))
         end
         keep=min(m-1,max(nev,cld(m,2))); shifts=values[order[keep+1:m]]
-        B=copy(H[1:m,1:m]); Q=_identity(C,m); oldresidual=H[m+1,m].*V[:,m+1]
+        B=H[1:m,1:m]; Q=_identity(C,m); hm=H[m+1,m]
+        for i in 1:n
+            oldresidual[i]=hm*V[i,m+1]
+        end
         for shift in shifts
             for k in 1:m-1
                 f=k==1 ? B[1,1]-shift : B[k,k-1]
@@ -85,11 +89,11 @@ function iram(A::AbstractMatrix{T};nev=1,subspace=min(size(A,1),max(20,2nev+4)),
                 k>1 && (B[k+1,k-1]=zero(C))
             end
         end
-        rotated=Matrix{C}(undef,n,m); gemm!(rotated,view(V,:,1:m),Q)
+        gemm!(rotated,view(V,:,1:m),Q)
         for i in 1:n
             work[i]=B[keep+1,keep]*rotated[i,keep+1]+Q[m,keep]*oldresidual[i]
         end
-        fill!(H,zero(C)); H[1:keep,1:keep]=B[1:keep,1:keep]; V[:,1:keep]=rotated[:,1:keep]
+        fill!(H,zero(C)); copyto!(view(H,1:keep,1:keep),view(B,1:keep,1:keep)); copyto!(view(V,:,1:keep),view(rotated,:,1:keep))
         for _ in 1:2, j in 1:keep
             h=dotc(view(V,:,j),work); H[j,keep]+=h; axpy!(work,view(V,:,j),-h)
         end
@@ -98,7 +102,9 @@ function iram(A::AbstractMatrix{T};nev=1,subspace=min(size(A,1),max(20,2nev+4)),
             result,_,_=_arnoldi_ritz(A,V,H,keep,nev,which,rtol,work)
             return merge(result,(;iterations,restarts=restart+1,reason=result.converged ? :converged : :invariant_subspace))
         end
-        V[:,keep+1]=work./beta
+        for i in 1:n
+            V[i,keep+1]=work[i]/beta
+        end
         used=_arnoldi_expand!(V,H,A,keep+1,m,work); iterations+=used-keep
     end
     error("unreachable IRAM state")
@@ -173,12 +179,19 @@ function lobpcg(A::AbstractMatrix{T};nev=1,B=nothing,maxiter=100,which=:smallest
     size(X)==(n,nev) || throw(DimensionMismatch("LOBPCG initial block differs"))
     X=_orthogonal_basis(X); size(X,2)==nev || throw(ArgumentError("rank-deficient initial block"))
     direction=zeros(T,n,0); values=zeros(real(T),nev); residuals=fill(real(T)(Inf),nev); iterations=0
+    # n×nev blocks reused by every iteration: a rotation writes into `spare`,
+    # which then swaps roles with its source.
+    AX=Matrix{T}(undef,n,nev); BX=similar(AX); spare=similar(AX); residual=similar(AX); W=similar(AX)
+    metric=similar(AX); directions=similar(AX)
     for iteration in 0:maxiter
-        AX=Matrix{T}(undef,n,nev); BX=similar(AX); _native_mm!(AX,A,X); B===nothing ? copyto!(BX,X) : _native_mm!(BX,B,X)
+        _native_mm!(AX,A,X); B===nothing ? copyto!(BX,X) : _native_mm!(BX,B,X)
         H=_mm(adjoint(X),AX); G=_mm(adjoint(X),BX)
         E=eigen_generalized(H,G); order=sortperm(E.values;rev=which===:largest); C=E.vectors[:,order]
-        values=E.values[order]; X=_mm(X,C); AX=_mm(AX,C); BX=_mm(BX,C)
-        residual=copy(AX)
+        values=E.values[order]
+        gemm!(spare,X,C); X,spare=spare,X
+        gemm!(spare,AX,C); AX,spare=spare,AX
+        gemm!(spare,BX,C); BX,spare=spare,BX
+        copyto!(residual,AX)
         for j in 1:nev
             axpy!(view(residual,:,j),view(BX,:,j),-values[j]); residuals[j]=nrm2(view(residual,:,j))
         end
@@ -192,16 +205,17 @@ function lobpcg(A::AbstractMatrix{T};nev=1,B=nothing,maxiter=100,which=:smallest
             return (;values,vectors=X,residuals,converged=true,iterations,reason=:converged)
         end
         iteration==maxiter && break
-        W=similar(residual)
         for j in 1:nev
             _precondition!(view(W,:,j),view(residual,:,j),preconditioner)
         end
         Q=_orthogonal_basis(hcat(X,W,direction)); AQ=Matrix{T}(undef,n,size(Q,2)); BQ=similar(AQ)
         _native_mm!(AQ,A,Q); B===nothing ? copyto!(BQ,Q) : _native_mm!(BQ,B,Q)
         H=_mm(adjoint(Q),AQ); G=_mm(adjoint(Q),BQ); E=eigen_generalized(H,G)
-        order=sortperm(E.values;rev=which===:largest)[1:nev]; next=_mm(Q,E.vectors[:,order])
-        metric=similar(next); B===nothing ? copyto!(metric,next) : _native_mm!(metric,B,next)
-        direction=next-_mm(X,_mm(adjoint(X),metric)); X=next
+        order=sortperm(E.values;rev=which===:largest)[1:nev]; next=spare; gemm!(next,Q,E.vectors[:,order])
+        B===nothing ? copyto!(metric,next) : _native_mm!(metric,B,next)
+        # direction = next - X (Xᴴ metric), in the reused block.
+        copyto!(directions,next); gemm!(directions,X,_mm(adjoint(X),metric),-one(T),one(T)); direction=directions
+        X,spare=next,X
     end
     (;values,vectors=X,residuals,converged=false,iterations,reason=:maxiter)
 end

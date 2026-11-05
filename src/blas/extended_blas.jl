@@ -33,12 +33,12 @@ function _generic_options(algorithm,kernel,blocksize)
     kernel in (:auto,:scalar) || throw(ArgumentError("extended BLAS has no native SIMD ISA kernel"))
     blocksize>=1 || throw(ArgumentError("positive extended tile size required"))
 end
-function gemm!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha=1,beta=0;
+function gemm!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha0=1,beta0=0;
                transA=:N,transB=:N,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:GenericFloat}
     _generic_require(T)
     threaded=threaded && generic_threadsafe(T)
     AA,BB=_op(A,transA),_op(B,transB); m,n,k=_gemm_dims(C,AA,BB)
-    _generic_options(algorithm,kernel,1); alpha,beta=convert(T,alpha),convert(T,beta)
+    _generic_options(algorithm,kernel,1); alpha,beta=convert(T,alpha0),convert(T,beta0)
     (m==0 || n==0) && return C
     if iszero(alpha) || k==0
         workspace===nothing && return _scale!(C,beta)
@@ -111,15 +111,15 @@ function trmm!(B::AbstractMatrix{T},A::AbstractMatrix{T},alpha=one(T);side=:L,up
     _trmm_leaf!(X,operand,W(alpha),side===:L,upper,unit;kernel,optimized=algorithm!==:reference)
     X===B || copyto!(B,X); B
 end
-function _rankk!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha,beta,uplo,trans,hermitian,rank2;
+function _rankk!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha0,beta0,uplo,trans,hermitian,rank2;
                  blocksize=32,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     n=_square(C); upper=_uplo(uplo); tr=_trans_kind(trans)
     (hermitian ? tr in (0,2) : tr in (0,1)) || throw(ArgumentError("invalid structured transpose"))
-    hermitian && (!isreal(beta) || (!rank2 && !isreal(alpha))) && throw(ArgumentError("Hermitian coefficients must be real"))
+    hermitian && (!isreal(beta0) || (!rank2 && !isreal(alpha0))) && throw(ArgumentError("Hermitian coefficients must be real"))
     opa,opb=_op(A,trans),_op(B,trans); size(opa,1)==n && size(opb)==size(opa) || throw(DimensionMismatch("extended rank-k dimensions differ"))
     _generic_options(algorithm,kernel,blocksize); _check_output_layout(C)
-    alpha,beta=convert(T,alpha),convert(T,beta)
+    alpha,beta=convert(T,alpha0),convert(T,beta0)
     (iszero(alpha) || size(opa,2)==0 || n==0) && return _triangle_scale!(C,beta,upper,hermitian)
     # aa/bb are assigned once: the parallel closure below captures them.
     aa=Base.mightalias(C,opa) ? copy(opa) : opa; bb=A===B ? aa : Base.mightalias(C,opb) ? copy(opb) : opb
@@ -155,13 +155,13 @@ function gemmt!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},a
     end
     C
 end
-function _generic_batched_execute!(Cs,As,Bs,alpha,beta;algorithm=:auto,kernel=:auto,threaded=true,
+function _generic_batched_execute!(Cs,As,Bs,alpha0,beta0;algorithm=:auto,kernel=:auto,threaded=true,
                                     workspace=nothing,config=nothing,batch_parallel_threshold=nothing)
     isempty(Cs) && return Cs
     T=eltype(first(Cs)); threaded=threaded && generic_threadsafe(T); cfg=config===nothing ? GemmConfig(T) : config; _generic_options(algorithm,kernel,1)
     threshold=batch_parallel_threshold===nothing ? cfg.parallel_threshold : batch_parallel_threshold
     threshold>=0 || throw(ArgumentError("negative batch threshold"))
-    alpha,beta=convert(T,alpha),convert(T,beta)
+    alpha,beta=convert(T,alpha0),convert(T,beta0)
     for i in eachindex(Cs)
         eltype(Cs[i])===eltype(As[i])===eltype(Bs[i])===T || throw(ArgumentError("batch types differ"))
         _gemm_dims(Cs[i],As[i],Bs[i])

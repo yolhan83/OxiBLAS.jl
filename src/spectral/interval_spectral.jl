@@ -31,7 +31,7 @@ function _interval_bands(C::CSRMatrix{T}) where T
 end
 function _interval_candidates(A,values,vectors,low,high,rtol,atol,boundary_tol;threaded=true)
     selected=findall(x->_interval_contains(x,low,high,boundary_tol),values)
-    vals=values[selected]; X=copy(vectors[:,selected]); R=real(eltype(A))
+    vals=values[selected]; X=vectors[:,selected]; R=real(eltype(A))
     for j in axes(X,2)
         norm=nrm2(view(X,:,j)); isfinite(norm) && norm>0 || throw(ArgumentError("invalid interval Ritz vector"))
         view(X,:,j)./=norm

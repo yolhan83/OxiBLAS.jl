@@ -48,7 +48,7 @@ function complete_orthogonal(A::AbstractMatrix{T};rtol=eps(real(T))*max(size(A).
         rank=i
     end
     LQ=lq_factor(view(F.R,1:rank,:);threaded)
-    CompleteOrthogonalFactor(F.Q,copy(LQ.L[:,1:rank]),LQ.Q,F.p,rank,(m,n))
+    CompleteOrthogonalFactor(F.Q,LQ.L[:,1:rank],LQ.Q,F.p,rank,(m,n))
 end
 function solve(F::CompleteOrthogonalFactor,b::AbstractVecOrMat{T}) where T
     m,n=F.shape; Base.require_one_based_indexing(b)

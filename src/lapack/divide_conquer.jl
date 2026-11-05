@@ -89,11 +89,12 @@ function _secular_merge(d,z,rho;maxiter=160)
         column+=1; push!(values,poles[i]); X[i,column]=one(R)
     end
     dd=poles[active]; zz=coupling[active]
+    logs=Vector{R}(undef,length(active)); signs=similar(logs)   # rewritten for every root
     for k in eachindex(active)
         origin,eta=_secular_root(dd,zz,rho,k,maxiter)
         column+=1; push!(values,origin+eta)
         # Log scaling avoids overflow when a root is extremely close to a pole.
-        logs=Vector{R}(undef,length(active)); signs=similar(logs); maxlog=-R(Inf)
+        maxlog=-R(Inf)
         exact=0
         for i in eachindex(active)
             den=(dd[i]-origin)-eta
@@ -120,7 +121,7 @@ end
 function _cuppen(d,e,leafsize,budget,maxiter)
     n=length(d)
     n<=leafsize && return eigen_tridiagonal(d,e;maxiter=maxiter*max(1,n))
-    h=n÷2; rho=abs(e[h]); left=copy(d[1:h]); right=copy(d[h+1:n])
+    h=n÷2; rho=abs(e[h]); left=d[1:h]; right=d[h+1:n]
     if iszero(rho)
         # Zero coupling is a genuine independent split, with no secular solve.
         leftresult=_cuppen(left,e[1:h-1],leafsize,1,maxiter)

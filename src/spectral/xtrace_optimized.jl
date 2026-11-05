@@ -31,13 +31,14 @@ function _xtrace_core(A,Omega,Y;normalization=:none,threaded=true,ranktol=64eps(
     W=_mm(adjoint(Q),Omega;threaded); H=_mm(adjoint(Q),AQ;threaded)
     B=fullrank ? nothing : _mm(adjoint(Q),Y;threaded)
     coefficients=zeros(T,rank,p); low=zeros(T,p); dimensions=zeros(Int,p); traceH=sum((H[i,i] for i in 1:rank);init=zero(T))
+    hs=zeros(T,rank)   # gemv! overwrites it for every probe
     for j in 1:p
         if fullrank
             s=view(S,:,j); w=view(W,:,j); c=dotc(s,w)
             for i in 1:rank
                 coefficients[i,j]=w[i]-s[i]*c
             end
-            hs=zeros(T,rank); gemv!(hs,H,s)
+            gemv!(hs,H,s)
             low[j]=traceH-dotc(s,hs); dimensions[j]=n-rank+1
         else
             # This QR is at most rank-by-(p-1), never n-by-(p-1).

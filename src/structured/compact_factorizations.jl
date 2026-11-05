@@ -248,7 +248,7 @@ end
 function solve(F::AasenFactor{T},b::AbstractVecOrMat{T}) where T
     n=length(F.diagonal); Base.require_one_based_indexing(b)
     size(b,1)==n || throw(DimensionMismatch("Aasen solve dimensions differ"))
-    X=ndims(b)==1 ? reshape(copy(b[F.p]),n,1) : copy(b[F.p,:]); trsm!(X,F.L;uplo=:L,unit=true)
+    X=ndims(b)==1 ? reshape(b[F.p],n,1) : b[F.p,:]; trsm!(X,F.L;uplo=:L,unit=true)
     storage=zeros(T,3,n)
     for i in 1:n
         storage[2,i]=F.diagonal[i]

@@ -21,11 +21,11 @@ end
 """Cache-oblivious largest-dimension recursion with native SIMD leaf kernels.
 Parallel output regions have task-owned packing panels and no nested tasks.
 """
-function gemm_cache_oblivious!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha=one(T),beta=zero(T);
+function gemm_cache_oblivious!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha0=one(T),beta0=zero(T);
                                transA=:N,transB=:N,leafsize=64,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
     opa,opb=_op(A,transA),_op(B,transB); m,n,k=_gemm_dims(C,opa,opb)
     leafsize>=1 || throw(ArgumentError("positive recursive leaf size required")); _kernel_kind(kernel)
-    alpha,beta=convert(T,alpha),convert(T,beta)
+    alpha,beta=convert(T,alpha0),convert(T,beta0)
     (iszero(alpha) || k==0) && return _scale!(C,beta)
     # AA, BB and workers are assigned once: the parallel closures capture them.
     AA=Base.mightalias(C,opa) ? copy(opa) : opa; BB=Base.mightalias(C,opb) ? copy(opb) : opb

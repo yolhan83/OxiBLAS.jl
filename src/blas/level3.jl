@@ -125,13 +125,13 @@ end
 `blocksize` sets the scalar leaf size. GEMM options control off-diagonal updates.
 Only aliased A requires a full logical snapshot; B is never fully copied.
 """
-function trmm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α=one(T);side=:L,uplo=:U,trans=:N,unit=false,
+function trmm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α0=one(T);side=:L,uplo=:U,trans=:N,unit=false,
                blocksize=8,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
     AA,n,upper=_tri_setup(A,trans,uplo,unit)
     side in (:L,:R) || throw(ArgumentError("side must be L or R"))
     n==(side===:L ? size(B,1) : size(B,2)) || throw(DimensionMismatch("TRMM dimensions differ"))
     _l3_validate(B,algorithm,kernel,blocksize)
-    α=convert(T,α)
+    α=convert(T,α0)
     _tri_workspace_call(workspace,B,A) do
         (iszero(α) || isempty(B)) && return _scale!(B,α)
         aa=Base.mightalias(A,B) ? _tri_snapshot(AA,upper,unit) : AA
@@ -203,13 +203,13 @@ end
 """Triangular solve with recursive native-GEMM updates and reusable panels.
 A singular nonunit diagonal is reported before any mutation of B.
 """
-function trsm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α=one(T);side=:L,uplo=:U,trans=:N,unit=false,
+function trsm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α0=one(T);side=:L,uplo=:U,trans=:N,unit=false,
                blocksize=8,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
     AA,n,upper=_tri_setup(A,trans,uplo,unit)
     side in (:L,:R) || throw(ArgumentError("side must be L or R"))
     n==(side===:L ? size(B,1) : size(B,2)) || throw(DimensionMismatch("TRSM dimensions differ"))
     _l3_validate(B,algorithm,kernel,blocksize)
-    α=convert(T,α)
+    α=convert(T,α0)
     _tri_workspace_call(workspace,B,A) do
         (iszero(α) || isempty(B)) && return _scale!(B,α)
         aa=Base.mightalias(A,B) ? _tri_snapshot(AA,upper,unit) : AA

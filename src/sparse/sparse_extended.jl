@@ -143,15 +143,15 @@ function sparse_mul!(y::AbstractVector{T},A::CSCMatrix{T},x::AbstractVector{T},a
     size(_op(A,trans))==(length(y),length(x)) || throw(DimensionMismatch("CSC multiply dimensions differ"))
     _check_vector_output(y);parallel_threshold>=0 || throw(ArgumentError("negative parallel threshold"))
     Base.mightalias(y,A) && throw(ArgumentError("output must not alias CSC storage"))
-    alpha,beta=convert(T,alpha),convert(T,beta)
-    (iszero(alpha) || isempty(x)) && return _scale!(y,beta)
+    a,b=convert(T,alpha),convert(T,beta)    # new names: a reassigned argument captured by the closure below would be boxed
+    (iszero(a) || isempty(x)) && return _scale!(y,b)
     workers=_operation_workers(length(y),length(A.values),threaded,parallel_threshold)
-    tr==0 && workers>1 && return sparse_mul!(y,CSRMatrix(A),x,alpha,beta;trans,threaded,parallel_threshold)
+    tr==0 && workers>1 && return sparse_mul!(y,CSRMatrix(A),x,a,b;trans,threaded,parallel_threshold)
     xx=Base.mightalias(y,x) ? copy(x) : x
-    _scale!(y,beta)
+    _scale!(y,b)
     if tr==0
         @inbounds for j in 1:A.n
-            value=alpha*xx[j]
+            value=a*xx[j]
             for p in A.colptr[j]:A.colptr[j+1]-1
                 i=A.rowind[p];y[i]=_arithmetic_madd(A.values[p],value,y[i])
             end
@@ -164,28 +164,59 @@ function sparse_mul!(y::AbstractVector{T},A::CSCMatrix{T},x::AbstractVector{T},a
                     value=tr==2 ? conj(A.values[p]) : A.values[p]
                     total=_arithmetic_madd(value,xx[A.rowind[p]],total)
                 end
-                y[j]+=alpha*total
+                y[j]+=a*total
             end
         end
     end
     y
 end
 
+# Coordinate storage is canonical (sorted by row, then column): a serial
+# product walks it directly. A parallel A*x keeps the CSR conversion (a
+# scatter from several tasks would race on y).
+function sparse_mul!(y::AbstractVector{T},A::COOMatrix{T},x::AbstractVector{T},alpha=one(T),beta=zero(T);
+                     trans=:N,threaded=true,parallel_threshold=262144) where T
+    threaded=threaded && generic_threadsafe(T)
+    tr=_trans_kind(trans); Base.require_one_based_indexing(y,x)
+    size(_op(A,trans))==(length(y),length(x)) || throw(DimensionMismatch("COO multiply dimensions differ"))
+    _check_vector_output(y); parallel_threshold>=0 || throw(ArgumentError("negative parallel threshold"))
+    Base.mightalias(y,A) && throw(ArgumentError("output must not alias COO storage"))
+    a,b=convert(T,alpha),convert(T,beta)
+    (iszero(a) || isempty(x)) && return _scale!(y,b)
+    workers=_operation_workers(length(y),length(A.values),threaded,parallel_threshold)
+    workers>1 && return sparse_mul!(y,CSRMatrix(A),x,a,b;trans,threaded,parallel_threshold)
+    xx=Base.mightalias(y,x) ? copy(x) : x
+    _scale!(y,b)
+    if tr==0
+        @inbounds for p in eachindex(A.values)
+            i=A.rows[p]; y[i]=_arithmetic_madd(A.values[p],a*xx[A.cols[p]],y[i])
+        end
+    else
+        @inbounds for p in eachindex(A.values)
+            j=A.cols[p]; value=tr==2 ? conj(A.values[p]) : A.values[p]
+            y[j]=_arithmetic_madd(value,a*xx[A.rows[p]],y[j])
+        end
+    end
+    y
+end
+
 _native_mv!(y,A::Union{CSCMatrix,COOMatrix},x)=sparse_mul!(y,A,x)
+# One task per block of columns of Y, each running the serial kernel of the
+# storage itself: CSC and COO need no CSR copy, and no two tasks write the
+# same column.
 function sparse_mul!(Y::AbstractMatrix{T},A::Union{CSRMatrix{T},CSCMatrix{T},COOMatrix{T}},X::AbstractMatrix{T},α=one(T),β=zero(T);trans=:N,threaded=true,parallel_threshold=262144) where T
     threaded=threaded && generic_threadsafe(T)
     AA=_op(A,trans); Base.require_one_based_indexing(Y,X)
     size(AA,2)==size(X,1) && size(Y)==(size(AA,1),size(X,2)) || throw(DimensionMismatch("sparse matrix product dimensions differ"))
     _check_output_layout(Y)
     Base.mightalias(Y,A) && throw(ArgumentError("output must not alias sparse storage"))
-    α,β=convert(T,α),convert(T,β)
-    iszero(α) && return _scale!(Y,β)
+    a,b=convert(T,α),convert(T,β)
+    iszero(a) && return _scale!(Y,b)
     XX=Base.mightalias(Y,X) ? copy(X) : X
-    C=A isa CSRMatrix ? A : CSRMatrix(A)
-    workers=_operation_workers(size(Y,2),Float64(length(C.values))*size(Y,2),threaded,parallel_threshold)
+    workers=_operation_workers(size(Y,2),Float64(length(A.values))*size(Y,2),threaded,parallel_threshold)
     _foreach_range(size(Y,2),workers) do columns,_
         for j in columns
-            sparse_mul!(view(Y,:,j),C,view(XX,:,j),α,β;trans,threaded=false)
+            sparse_mul!(view(Y,:,j),A,view(XX,:,j),a,b;trans,threaded=false)
         end
     end
     Y

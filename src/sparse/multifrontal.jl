@@ -28,7 +28,7 @@ function _supernodes(columns,maxwidth)
     nodes=UnitRange{Int}[]; n=length(columns); first=1
     while first<=n
         last=first
-        while last<n && last-first+1<maxwidth && columns[last][2:end]==columns[last+1]
+        while last<n && last-first+1<maxwidth && view(columns[last],2:length(columns[last]))==columns[last+1]
             last+=1
         end
         push!(nodes,first:last); first=last+1

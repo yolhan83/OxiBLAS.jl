@@ -47,6 +47,15 @@ function _small_solve(A,b;perturb=false)
     solve(F,b./s)
 end
 
+# _small_solve(D,r;perturb=true) for a 1×1 block D=[d], without arrays:
+# same normalization s, same pivot perturbation, x = (r/s)/(d/s).
+@inline function _small_solve1(d::C,r::C) where {C}
+    R=real(C); s=max(abs(d),one(R)); z=d/s
+    floor=max(floatmin(R)/eps(R),eps(R))
+    abs(z)<floor && (z=iszero(z) ? C(floor) : (z/abs(z))*floor)
+    (r/s)/z
+end
+
 function _pencil_weights(a,b,sa,sb)
     R=real(typeof(a)); C=Complex{R}
     aa=a*sb; bb=b*sa; t=max(abs(aa),abs(bb))
@@ -92,8 +101,25 @@ function _pencil_vectors(S,B,alpha,beta;left=false)
         end
         order=left ? (index+1:length(blocks)) : (index-1:-1:1)
         for k in order
-            rows=blocks[k]; D=C[m(i,j) for i in rows,j in rows]; rhs=zeros(C,length(rows))
+            rows=blocks[k]
             known=left ? (first(block):first(rows)-1) : (last(rows)+1:last(block))
+            if length(rows)==1
+                # 1×1 block (every block of a complex Schur form): the scalar
+                # form of the 2×2 path below, without its small arrays.
+                # (New names: r and i of the enclosing loop hold other values.)
+                row=first(rows); acc=zero(C)
+                for j in known
+                    acc-=m(row,j)*X[j,col]
+                end
+                if abs(acc)>0
+                    x1=_small_solve1(C(m(row,row)),acc)
+                    isfinite(x1) || throw(OverflowError("Schur eigenvector substitution overflow"))
+                    X[row,col]=x1
+                    t=maximum(abs,view(X,:,col)); t>1 && (view(X,:,col)./=t)
+                end
+                continue
+            end
+            D=C[m(i,j) for i in rows,j in rows]; rhs=zeros(C,length(rows))
             for (ii,i) in enumerate(rows), j in known
                 rhs[ii]-=m(i,j)*X[j,col]
             end

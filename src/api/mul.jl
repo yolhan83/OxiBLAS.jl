@@ -221,9 +221,9 @@ end
 # ---- LinearAlgebra structured matrices ---------------------------------------
 
 function _mul_diag_left!(C,d,B,α,β)
-    C isa _LA.Diagonal && return (_axpby_vec!(C.diag,d .* B.diag,α,β);C)
+    C isa _LA.Diagonal && return (_axpby_diag!(C.diag,d,B.diag,α,β);C)
     # Diagonal × anything else: row scaling, B read by index.
-    ndims(B)==1 && return _axpby_vec!(C,d .* B,α,β)
+    ndims(B)==1 && return _axpby_diag!(C,d,B,α,β)
     @inbounds for j in axes(C,2), i in axes(C,1)
         v=α*(d[i]*B[i,j])
         C[i,j]=iszero(β) ? v : v+β*C[i,j]
@@ -237,9 +237,11 @@ function _mul_diag_right!(C,A,d,α,β)
     end
     C
 end
-function _axpby_vec!(y,x,α,β)
-    @inbounds for i in eachindex(y,x)
-        y[i]=iszero(β) ? α*x[i] : α*x[i]+β*y[i]
+# y ← α (d .* x) + β y without the d .* x temporary.
+function _axpby_diag!(y,d,x,α,β)
+    @inbounds for i in eachindex(y,d,x)
+        v=α*(d[i]*x[i])
+        y[i]=iszero(β) ? v : v+β*y[i]
     end
     y
 end
@@ -254,6 +256,17 @@ function _mul_triangular!(C,Tr,X,α,β,left)
         trans=P isa Transpose ? :T : :C; P=parent(P); upper=!upper
     end
     uplo=upper ? :U : :L
+    # β = 0: C itself is the work array (operands overlapping C were
+    # detached by mul!); otherwise a copy of X, combined into C.
+    if iszero(β) && C isa StridedArray
+        copyto!(C,X)
+        if ndims(C)==1
+            trmv!(C,P;uplo,trans,unit); _scale!(C,α)
+        else
+            trmm!(C,P,α;side=left ? :L : :R,uplo,trans,unit)
+        end
+        return C
+    end
     W=Array{eltype(C)}(undef,size(X)); copyto!(W,X)
     if ndims(W)==1
         trmv!(W,P;uplo,trans,unit); _scale!(W,α)

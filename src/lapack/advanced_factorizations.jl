@@ -480,8 +480,20 @@ bunchkaufman_factor(A;kwargs...)=ldlt_factor(A;pivot=:bunchkaufman,kwargs...)
 function solve(F::LDLFactor,b::AbstractVecOrMat)
     n=size(F.L,1); Base.require_one_based_indexing(b)
     size(b,1)==n || throw(DimensionMismatch("LDL solve dimensions differ"))
-    X=ndims(b)==1 ? reshape(b[F.p],n,1) : b[F.p,:]
-    trsm!(X,F.L;uplo=:L,unit=true); k=1
+    X=Array{promote_type(eltype(F.L),eltype(b))}(undef,size(b)); copyto!(X,b)
+    _ldl_solve!(F,X)
+end
+# In-place P'L D Lᴴ P solve of the columns of X: one permutation buffer, a
+# triangular vector solve for a vector right-hand side.
+function _ldl_solve!(F::LDLFactor,X::AbstractVecOrMat)
+    n=size(F.L,1); size(X,1)==n || throw(DimensionMismatch("LDL solve dimensions differ"))
+    t=similar(X,n)
+    for j in axes(X,2)
+        c=view(X,:,j)
+        for i in 1:n; t[i]=c[F.p[i]]; end
+        copyto!(c,t)
+    end
+    X isa AbstractVector ? trsv!(X,F.L;uplo=:L,unit=true) : trsm!(X,F.L;uplo=:L,unit=true); k=1
     for step in F.blocks
         if step==1
             for j in axes(X,2)
@@ -498,12 +510,14 @@ function solve(F::LDLFactor,b::AbstractVecOrMat)
         end
         k+=step
     end
-    trsm!(X,F.L;uplo=:L,unit=true,trans=F.hermitian ? :C : :T)
-    result=similar(X)
-    for j in axes(X,2), i in 1:n
-        result[F.p[i],j]=X[i,j]
+    trans=F.hermitian ? :C : :T
+    X isa AbstractVector ? trsv!(X,F.L;uplo=:L,unit=true,trans) : trsm!(X,F.L;uplo=:L,unit=true,trans)
+    for j in axes(X,2)
+        c=view(X,:,j)
+        for i in 1:n; t[F.p[i]]=c[i]; end
+        copyto!(c,t)
     end
-    ndims(b)==1 ? vec(result) : result
+    X
 end
 
 """Hermitian-definite generalized eigenproblem A*V=B*V*Diagonal(values).
