@@ -31,7 +31,11 @@ Base.getindex(x::SelectedParameters,i::Int)=i in x.readable ? x.data[i] : error(
         @test abs(dsdot(x,y)-ordered)<=bound
         @test abs(Float64(sdsdot(alpha,x,y))-biased)<=bound+eps(Float32)*abs(biased)
         @test abs(BigFloat(dsdot(x,y))-exact)<=bound
-        @test dsdot(x,y)≈reference_dsdot(x,y) atol=bound rtol=8eps(Float64)*max(1,n)
+        # Some OpenBLAS x86 kernels round the products to Float32 before the
+        # Float64 accumulation: the reference itself carries an eps(Float32)
+        # error per product. Exactness is checked against BigFloat above.
+        refbound=bound+2eps(Float32)*sum(abs.(Float64.(x).*Float64.(y)))
+        @test abs(dsdot(x,y)-reference_dsdot(x,y))<=refbound
         @test sdsdot(alpha,x,y)≈reference_sdsdot(alpha,x,y) atol=16eps(Float32)*max(1,abs(Float64(biased)))
         backingx=randn(Float32,2n+7); backingy=randn(Float32,3n+5)
         xv=view(backingx,2n+2:-2:4); yv=view(backingy,2:3:3n-1)

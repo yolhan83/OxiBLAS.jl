@@ -8,9 +8,17 @@
 # generators below, whose IR is unchanged.
 const _NonEmptyVec{T,N}=Tuple{VecElement{T},Vararg{VecElement{T},N}}
 
+# Julia >= 1.12 passes Ptr arguments to llvmcall as LLVM `ptr` and deprecates
+# integer pointers; 1.10 only parses typed pointers. Chosen when the IR is
+# generated: the emitted load/store is identical.
+const _OPAQUE_PTR_IR = VERSION >= v"1.12"
+
 @inline @generated function _vload(p::Ptr{T}, ::Val{W}) where {T<:RealFloat,W}
     ty = T === Float64 ? "double" : "float"
-    ir = """
+    ir = _OPAQUE_PTR_IR ? """
+    %v = load <$W x $ty>, ptr %0, align $(sizeof(T))
+    ret <$W x $ty> %v
+    """ : """
     %p = inttoptr i$(Sys.WORD_SIZE) %0 to <$W x $ty>*
     %v = load <$W x $ty>, <$W x $ty>* %p, align $(sizeof(T))
     ret <$W x $ty> %v
@@ -101,7 +109,10 @@ end
 
 @inline @generated function _vstore(p::Ptr{T}, v::NTuple{W,VecElement{T}}) where {T<:RealFloat,W}
     ty = T === Float64 ? "double" : "float"
-    ir = """
+    ir = _OPAQUE_PTR_IR ? """
+    store <$W x $ty> %1, ptr %0, align $(sizeof(T))
+    ret void
+    """ : """
     %p = inttoptr i$(Sys.WORD_SIZE) %0 to <$W x $ty>*
     store <$W x $ty> %1, <$W x $ty>* %p, align $(sizeof(T))
     ret void
