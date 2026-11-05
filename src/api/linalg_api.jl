@@ -76,7 +76,7 @@ function _apply_split!(f!::F,::Type{T},B::AbstractVecOrMat) where {F,T}
     end
     B
 end
-_asmatrix(B::AbstractVector)=reshape(B,length(B),1)
+_asmatrix(B::AbstractVector)=Base.ReshapedArray(B,(length(B),1),())
 _asmatrix(B::AbstractMatrix)=B
 
 # Row permutation of every column: X <- X[p,:], or X[p,:] <- X when inverse.

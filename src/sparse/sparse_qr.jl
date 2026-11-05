@@ -141,7 +141,7 @@ function solve(F::SparseQRFactor{T},b::AbstractVecOrMat{T};rtol=eps(real(T))*max
     m>=n && size(b,1)==m || throw(DimensionMismatch("sparse QR solve requires a tall compatible matrix"))
     if ndims(b)==1
         X=copy(b)
-        _qr_solve!(F,reshape(X,m,1);rtol)
+        _qr_solve!(F,Base.ReshapedArray(X,(m,1),());rtol)
         return m==n ? X : resize!(X,n)
     end
     X=copy(b)
