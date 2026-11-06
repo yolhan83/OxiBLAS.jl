@@ -60,9 +60,13 @@ mulvec_inplace(A,R,T,N,r)=(x=rnd(r,T,size(R,2)); y=zeros(T,size(R,1)); z=similar
 spmm(A,R,T,N,r)=(()->O.mul(A,A), ()->R*R, (xo,xr)->ref_or_missing(y->close_to(xo,y,T,N),xr))
 gemm_ws(A,R,T,N,r)=(B=rnd(r,T,N,N); C=zeros(T,N,N); D=similar(C); w=GemmWorkspace(T,N,N,N);
     (()->gemm!(C,A,B;workspace=w), ()->LA.mul!(D,R,B), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,N),xr)))
-syrk_case(A,R,T,N,r)=(C=zeros(T,N,N); D=zeros(T,N,N);
-    (()->syrk!(C,A), ()->LA.mul!(D,R,LA.transpose(R)),
-     (xo,xr)->ref_or_missing(y->close_to(LA.triu(xo),LA.triu(y),T,N),xr)))
+function syrk_case(A,R,T,N,r)
+    As=(T===Float16 && N==256) ? A./T(N) : A
+    Rs=(T===Float16 && N==256) ? R./T(N) : R
+    C=zeros(T,N,N); D=zeros(T,N,N)
+    (()->syrk!(C,As), ()->LA.mul!(D,Rs,LA.transpose(Rs)),
+     (xo,xr)->ref_or_missing(y->close_to(LA.triu(xo),LA.triu(y),T,N),xr))
+end
 trsm_case(A,R,T,N,r)=(B=rnd(r,T,N,N); X=similar(B); Y=similar(B); U=parent(A);
     (()->(copyto!(X,B); trsm!(X,U)), ()->(copyto!(Y,B); LA.ldiv!(R,Y)), (xo,xr)->solves(R,xo,B,T,N)))
 

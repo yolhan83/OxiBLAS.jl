@@ -569,6 +569,8 @@ end
 function _mul_sparse_product(A,B)
     if A isa SparseMatrixCSC && B isa SparseMatrixCSC
         return sparse_matmul(A,B)
+    elseif A isa CSCMatrix && B isa CSCMatrix
+        return sparse_matmul(A,B)
     end
     sparse_matmul(_logical_csr(A),_logical_csr(B))
 end
@@ -627,7 +629,7 @@ function mul(A::_MulOperand,B::_MulOperand)
             return arrays ? v : SparseTensor(v)
         end
         arrays && return R isa SparseMatrixCSC ? R : SparseMatrixCSC(R)
-        return _mul_csc(A,B) ? CSCMatrix(R) : (R isa CSRMatrix ? R : CSRMatrix(R))
+        return _mul_csc(A,B) ? (R isa CSCMatrix ? R : CSCMatrix(R)) : (R isa CSRMatrix ? R : CSRMatrix(R))
     end
     if (_mulsparse(AA) && kb===:diagonal) || (ka===:diagonal && _mulsparse(BB))
         R=_mul_value(AA,BB)

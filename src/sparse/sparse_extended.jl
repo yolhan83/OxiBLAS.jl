@@ -172,8 +172,25 @@ function sparse_mul!(y::AbstractVector{T},A::CSCMatrix{T},x::AbstractVector{T},a
 end
 
 # Coordinate storage is canonical (sorted by row, then column): a serial
-# product walks it directly. A parallel A*x keeps the CSR conversion (a
-# scatter from several tasks would race on y).
+# product walks it directly using a row-scalar accumulator. A parallel A*x
+# partitions rows directly via binary search without CSR conversion.
+@inline function _coo_mv_range!(y, rows, cols, vals, xx, a, p_start, p_end, ::Type{T}) where T
+    cur_row = rows[p_start]
+    acc = zero(T)
+    @inbounds for p in p_start:p_end
+        r = rows[p]
+        if r != cur_row
+            y[cur_row] = _arithmetic_madd(acc, a, y[cur_row])
+            cur_row = r
+            acc = vals[p] * xx[cols[p]]
+        else
+            acc = _arithmetic_madd(vals[p], xx[cols[p]], acc)
+        end
+    end
+    @inbounds y[cur_row] = _arithmetic_madd(acc, a, y[cur_row])
+    nothing
+end
+
 function sparse_mul!(y::AbstractVector{T},A::COOMatrix{T},x::AbstractVector{T},alpha=one(T),beta=zero(T);
                      trans=:N,threaded=true,parallel_threshold=262144) where T
     threaded=threaded && generic_threadsafe(T)
@@ -184,17 +201,31 @@ function sparse_mul!(y::AbstractVector{T},A::COOMatrix{T},x::AbstractVector{T},a
     a,b=convert(T,alpha),convert(T,beta)
     (iszero(a) || isempty(x)) && return _scale!(y,b)
     workers=_operation_workers(length(y),length(A.values),threaded,parallel_threshold)
-    workers>1 && return sparse_mul!(y,CSRMatrix(A),x,a,b;trans,threaded,parallel_threshold)
     xx=Base.mightalias(y,x) ? copy(x) : x
     _scale!(y,b)
+    isempty(A.values) && return y
     if tr==0
-        @inbounds for p in eachindex(A.values)
-            i=A.rows[p]; y[i]=_arithmetic_madd(A.values[p],a*xx[A.cols[p]],y[i])
+        if workers>1
+            _foreach_range(A.m,workers) do rows_chunk,_
+                p_start=searchsortedfirst(A.rows,first(rows_chunk))
+                p_end=searchsortedlast(A.rows,last(rows_chunk))
+                if p_start<=p_end
+                    _coo_mv_range!(y,A.rows,A.cols,A.values,xx,a,p_start,p_end,T)
+                end
+            end
+        else
+            _coo_mv_range!(y,A.rows,A.cols,A.values,xx,a,1,length(A.values),T)
         end
     else
+        cur_row=0; cur_x=zero(T)
         @inbounds for p in eachindex(A.values)
+            r=A.rows[p]
+            if r!=cur_row
+                cur_row=r
+                cur_x=a*xx[r]
+            end
             j=A.cols[p]; value=tr==2 ? conj(A.values[p]) : A.values[p]
-            y[j]=_arithmetic_madd(value,a*xx[A.rows[p]],y[j])
+            y[j]=_arithmetic_madd(value,cur_x,y[j])
         end
     end
     y
@@ -228,7 +259,9 @@ output rows. No dense matrix expansion or external sparse backend.
 function sparse_matmul(A::CSRMatrix{T},B::CSRMatrix{T};droptol=zero(real(T))) where T
     A.n==B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
     droptol>=0 || throw(ArgumentError("negative sparse drop tolerance"))
-    ptr=Int[1]; cols=Int[]; vals=T[]; marks=zeros(Int,B.n); sums=zeros(T,B.n); touched=Int[]
+    ptr=Vector{Int}(undef,A.m+1); ptr[1]=1
+    cols=Int[]; vals=T[]; marks=zeros(Int,B.n); sums=zeros(T,B.n)
+    touched=Int[]; sizehint!(touched,min(B.n,64))
     for i in 1:A.m
         empty!(touched)
         for p in A.rowptr[i]:A.rowptr[i+1]-1
@@ -241,13 +274,56 @@ function sparse_matmul(A::CSRMatrix{T},B::CSRMatrix{T};droptol=zero(real(T))) wh
                 sums[j]+=a*B.values[q]
             end
         end
-        sort!(touched)
+        if length(touched)<=32
+            sort!(touched,alg=InsertionSort)
+        else
+            sort!(touched)
+        end
         for j in touched
             !(abs(sums[j])<=droptol) && (push!(cols,j); push!(vals,sums[j]))
         end
-        push!(ptr,length(vals)+1)
+        ptr[i+1]=length(vals)+1
     end
-    CSRMatrix(A.m,B.n,ptr,cols,vals)
+    CSRMatrix(_Shared(),A.m,B.n,ptr,cols,vals)
+end
+
+"""Gustavson CSC×CSC multiplication with a sparse column accumulator and sorted
+output columns. No conversion to CSR or dense matrix expansion.
+"""
+function sparse_matmul(A::CSCMatrix{T},B::CSCMatrix{T};droptol=zero(real(T))) where T
+    A.n==B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
+    droptol>=0 || throw(ArgumentError("negative sparse drop tolerance"))
+    colptr=Vector{Int}(undef,B.n+1); colptr[1]=1
+    rowind=Int[]; values=T[]; marks=zeros(Int,A.m); sums=zeros(T,A.m)
+    touched=Int[]; sizehint!(touched,min(A.m,64))
+    for j in 1:B.n
+        empty!(touched)
+        for q in B.colptr[j]:B.colptr[j+1]-1
+            k=B.rowind[q]; b=B.values[q]
+            for p in A.colptr[k]:A.colptr[k+1]-1
+                i=A.rowind[p]
+                if marks[i]!=j
+                    marks[i]=j; sums[i]=zero(T); push!(touched,i)
+                end
+                sums[i]+=A.values[p]*b
+            end
+        end
+        if length(touched)<=32
+            sort!(touched,alg=InsertionSort)
+        else
+            sort!(touched)
+        end
+        for i in touched
+            !(abs(sums[i])<=droptol) && (push!(rowind,i); push!(values,sums[i]))
+        end
+        colptr[j+1]=length(values)+1
+    end
+    CSCMatrix(_Shared(),A.m,B.n,colptr,rowind,values)
+end
+function sparse_matmul(A::CSCMatrix{T1},B::CSCMatrix{T2};kwargs...) where {T1,T2}
+    T=promote_type(T1,T2)
+    sparse_matmul(CSCMatrix(_Shared(),A.m,A.n,copy(A.colptr),copy(A.rowind),T.(A.values)),
+                  CSCMatrix(_Shared(),B.m,B.n,copy(B.colptr),copy(B.rowind),T.(B.values));kwargs...)
 end
 sparse_matmul(A::Union{CSRMatrix,CSCMatrix,COOMatrix},B::Union{CSRMatrix,CSCMatrix,COOMatrix};kwargs...)=sparse_matmul(CSRMatrix(A),CSRMatrix(B);kwargs...)
 
