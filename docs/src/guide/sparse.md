@@ -20,9 +20,39 @@ SparseArrays:
 
 ## Products
 
-`sparse_mul!(y, A, x, α, β; trans)` computes the sparse × dense product,
-`sparse_matmul(A, B)` the sparse × sparse product. `A * B`, `A * x` and
-`OxiBLAS.mul!` dispatch to the same kernels.
+### Sparse × dense products: `sparse_mul!`
+
+`sparse_mul!(y, A, x, α=1, β=0; trans=:N, threaded=true, parallel_threshold=262144)`
+computes the in-place sparse matrix-vector product `y ← α·op(A)·x + β·y` (SpMV).
+The corresponding matrix-matrix form `sparse_mul!(Y, A, X, α, β; ...)` computes
+the sparse × dense matrix product `Y ← α·op(A)·X + β·Y` (SpMM).
+
+- **Formats:** accepts [`CSRMatrix`](@ref), [`CSCMatrix`](@ref), [`COOMatrix`](@ref),
+  extended formats, and `SparseArrays.SparseMatrixCSC`.
+- **Transposition:** `trans=:N` for $A$, `:T` for $A^{\top}$, and `:C` for $A^{\mathrm{H}}$.
+- **Parallelism:** multi-threading is enabled by default (`threaded=true`),
+  partitioning rows (CSR SpMV / transposed CSC SpMV) or column blocks (SpMM) across
+  threads when workload exceeds `parallel_threshold`.
+
+### Sparse × sparse products: `sparse_matmul`
+
+`sparse_matmul(A, B; droptol=0, threaded=true, parallel_threshold=30_000)` computes
+the sparse matrix-matrix product `A * B` (SpGEMM) using a native parallel Gustavson
+algorithm:
+
+- **Formats:** CSR × CSR multiplies row-by-row with an $O(n)$ row accumulator per thread;
+  CSC × CSC multiplies column-by-column with an $O(m)$ column accumulator per thread.
+  SparseArrays operands and mixed formats are handled natively with format preservation.
+- **Sorted output:** row and column indices in the resulting matrix are guaranteed strictly
+  sorted in ascending order.
+- **Drop tolerance:** `droptol` drops entries with `abs(val) <= droptol` from the output.
+- **Adaptive multi-threading:** when the estimated workload `nnz(A) * nnz(B) / dim`
+  exceeds `parallel_threshold`, work is partitioned across available Julia threads with
+  thread-private accumulators and combined into the final matrix in a single pass without
+  redundant allocations or dense conversions.
+
+The standard operators `A * B`, `A * x`, and `LinearAlgebra.mul!` automatically dispatch
+to these native kernels.
 
 ## Solves: `\` and factorizations
 

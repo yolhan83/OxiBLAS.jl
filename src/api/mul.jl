@@ -564,7 +564,7 @@ function _mul_dense_sparse!(C,A,B::CSCMatrix,α,β)
     end
     C
 end
-# Sparse × sparse (Gustavson on CSR); SparseArrays pairs keep their own
+# Sparse × sparse (Gustavson on CSR and CSC); SparseArrays pairs keep their own
 # zero-copy path and result type.
 function _mul_sparse_product(A,B)
     if A isa SparseMatrixCSC && B isa SparseMatrixCSC

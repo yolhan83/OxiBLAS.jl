@@ -123,10 +123,6 @@ end
 _native_mv!(y,A::SparseMatrixCSC,x)=sparse_mul!(y,CSCMatrix(A),x)
 sparse_mul!(y::AbstractVector,A::SparseMatrixCSC,x::AbstractVector,args...;kwargs...)=sparse_mul!(y,CSCMatrix(A),x,args...;kwargs...)
 sparse_mul!(Y::AbstractMatrix,A::SparseMatrixCSC,X::AbstractMatrix,args...;kwargs...)=sparse_mul!(Y,CSCMatrix(A),X,args...;kwargs...)
-"""Sparse × sparse for SparseArrays operands, returned as a SparseMatrixCSC.
-(A*B)ᵀ = BᵀAᵀ, and the CSR forms of Aᵀ and Bᵀ share A's and B's storage, so
-the Gustavson CSR product of the transposes is the CSC of A*B: no input or
-output transposition."""
 function sparse_matmul(A::SparseMatrixCSC{T},B::SparseMatrixCSC{T};kwargs...) where T
     size(A,2)==size(B,1) || throw(DimensionMismatch("sparse matrix product dimensions differ"))
     C=sparse_matmul(CSRMatrix(transpose(B)),CSRMatrix(transpose(A));kwargs...)

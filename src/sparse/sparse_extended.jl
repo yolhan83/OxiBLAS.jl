@@ -1,12 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Owned compressed-column sparse matrix with validated 1-based indices.
-
-A `SparseArrays.AbstractSparseMatrix`, like the other OxiBLAS formats (not an
-`AbstractSparseMatrixCSC`: operations on OxiBLAS sparse types end in OxiBLAS
-kernels, not in inherited SparseArrays ones; see
-reports/ARCHITECTURE_CSC_A_vs_B.md). Row indices are unique and sorted within
-each column, so `SparseMatrixCSC(A)` always shares the storage; explicit stored
-zeros are allowed, as in `SparseMatrixCSC`."""
 struct CSCMatrix{T,I<:Integer} <: SparseArrays.AbstractSparseMatrix{T,I}
     m::Int
     n::Int
@@ -41,9 +33,6 @@ function Base.getindex(A::CSCMatrix{T},i::Int,j::Int) where T
     zero(T)
 end
 
-"""Canonical coordinate sparse storage. Duplicate coordinates are summed and
-exact zero entries are removed during construction.
-"""
 struct COOMatrix{T,I<:Integer} <: SparseArrays.AbstractSparseMatrix{T,I}
     m::Int
     n::Int
@@ -292,10 +281,6 @@ function _sparse_matmul_serial(A::CSRMatrix{T}, B::CSRMatrix{T}, droptol::Real) 
     CSRMatrix(_Shared(), A.m, B.n, ptr, cols, vals)
 end
 
-"""Gustavson CSR×CSR multiplication with a sparse row accumulator and sorted
-output rows. Uses multi-threading for sufficiently large workloads.
-No dense matrix expansion or external sparse backend.
-"""
 function sparse_matmul(A::CSRMatrix{T}, B::CSRMatrix{T}; droptol=zero(real(T)), threaded=true, parallel_threshold=30_000) where T
     A.n == B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
     droptol >= 0 || throw(ArgumentError("negative sparse drop tolerance"))
@@ -430,10 +415,6 @@ function _sparse_matmul_serial(A::CSCMatrix{T}, B::CSCMatrix{T}, droptol::Real) 
     CSCMatrix(_Shared(), A.m, B.n, colptr, rowind, values)
 end
 
-"""Gustavson CSC×CSC multiplication with a sparse column accumulator and sorted
-output columns. Uses multi-threading for sufficiently large workloads.
-No conversion to CSR or dense matrix expansion.
-"""
 function sparse_matmul(A::CSCMatrix{T}, B::CSCMatrix{T}; droptol=zero(real(T)), threaded=true, parallel_threshold=30_000) where T
     A.n == B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
     droptol >= 0 || throw(ArgumentError("negative sparse drop tolerance"))

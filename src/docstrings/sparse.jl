@@ -5,6 +5,48 @@
 # ---- storage formats -----------------------------------------------------------
 
 @doc raw"""
+    CSRMatrix(m, n, rowptr, colind, values)
+    CSRMatrix(A)
+
+Compressed Sparse Row (CSR) matrix with 1-based indexing.
+
+Row pointers `rowptr` have length `m + 1` with `rowptr[1] == 1` and monotonic
+increasing values (`rowptr[end] == length(values) + 1`). Column indices `colind`
+and coefficients `values` have length equal to the number of stored nonzeros.
+Duplicate column entries within any row are rejected. Explicit stored zeros are
+preserved.
+
+Accepts real, complex and generic (e.g. `BigFloat`) scalars. Interoperates with
+`SparseArrays.SparseMatrixCSC` and other OxiBLAS sparse formats.
+""" CSRMatrix
+
+@doc raw"""
+    CSCMatrix(m, n, colptr, rowind, values)
+    CSCMatrix(A)
+    CSCMatrix(S::SparseMatrixCSC)
+
+Compressed Sparse Column (CSC) matrix with validated 1-based indices.
+
+Column pointers `colptr` have length `n + 1` with `colptr[1] == 1` and
+`colptr[end] == length(values) + 1`. Row indices `rowind` are strictly increasing
+and unique within each column. Explicit stored zeros are preserved.
+
+Converting a `CSCMatrix` from or to a `SparseArrays.SparseMatrixCSC` shares storage
+without copying when indices are valid and sorted.
+""" CSCMatrix
+
+@doc raw"""
+    COOMatrix(m, n, rows, cols, values)
+    COOMatrix(A)
+
+Coordinate (COO) sparse matrix in canonical form.
+
+Coordinates `rows` and `cols` use 1-based indexing. During canonical
+construction, duplicate coordinates `(i, j)` are automatically summed, exact
+zeros are removed, and entries are sorted in row-major order.
+""" COOMatrix
+
+@doc raw"""
     DIAMatrix(A::CSRMatrix)
     DIAMatrix(m, n, offsets, data)
 
@@ -234,6 +276,49 @@ optionally smoothed) applied as one V- or W-cycle per preconditioner call.
 """ AMGPreconditioner
 
 # ---- operations and utilities -------------------------------------------------------
+
+@doc raw"""
+    sparse_mul!(y::AbstractVector, A, x::AbstractVector, α=1, β=0; trans=:N, threaded=true, parallel_threshold=262144) -> y
+    sparse_mul!(Y::AbstractMatrix, A, X::AbstractMatrix, α=1, β=0; trans=:N, threaded=true, parallel_threshold=262144) -> Y
+
+In-place sparse matrix-vector product `y ← α·op(A)·x + β·y` (SpMV) or sparse matrix-matrix
+product `Y ← α·op(A)·X + β·Y` (SpMM).
+
+# Arguments
+- `y` / `Y`: Destination dense vector or matrix. Must not alias sparse storage of `A`.
+- `A`: Sparse matrix ([`CSRMatrix`](@ref), [`CSCMatrix`](@ref), [`COOMatrix`](@ref), extended formats, or `SparseMatrixCSC`).
+- `x` / `X`: Input dense vector or matrix.
+- `α`, `β`: Scalar coefficients (default: `α = 1`, `β = 0`).
+- `trans`: Operation on `A`: `:N` for $A$, `:T` for $A^{\top}$, `:C` for $A^{\mathrm{H}}$.
+- `threaded`: Enable multi-threading (default: `true`).
+- `parallel_threshold`: Workload threshold before spawning tasks across threads (default: `262144`).
+
+Multi-threading partitions rows (for CSR SpMV or transposed CSC SpMV) or columns (for SpMM)
+across worker tasks.
+""" sparse_mul!
+
+@doc raw"""
+    sparse_matmul(A::CSRMatrix, B::CSRMatrix; droptol=0, threaded=true, parallel_threshold=30_000) -> CSRMatrix
+    sparse_matmul(A::CSCMatrix, B::CSCMatrix; droptol=0, threaded=true, parallel_threshold=30_000) -> CSCMatrix
+    sparse_matmul(A, B; kwargs...)
+
+Native Gustavson sparse matrix-matrix multiplication (`C = A * B`).
+
+Computes the sparse product without converting to dense arrays or delegating to
+external libraries. CSR×CSR uses row-wise accumulation with an $O(n)$ sparse
+accumulator per thread; CSC×CSC uses column-wise accumulation with an $O(m)$
+sparse accumulator per thread. Output row/column indices are strictly sorted.
+
+# Arguments
+- `A`, `B`: Sparse matrices ([`CSRMatrix`](@ref), [`CSCMatrix`](@ref), [`COOMatrix`](@ref), or `SparseArrays.SparseMatrixCSC`).
+- `droptol::Real`: Drop tolerance (default: `0`). Elements with `abs(val) <= droptol` are omitted.
+- `threaded::Bool`: Enable multi-threading (default: `true`).
+- `parallel_threshold::Integer`: Heuristic workload threshold (`nnz(A) * nnz(B) / dim`) for thread spawning (default: `30_000`).
+
+When multi-threading is active, work is adaptively partitioned into chunked tasks
+with thread-private accumulators and assembled into the final compressed structure with
+zero allocation overhead.
+""" sparse_matmul
 
 @doc raw"""
     sparse_add(A, B, α=1, β=1) -> CSRMatrix

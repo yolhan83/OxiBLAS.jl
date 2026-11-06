@@ -3,8 +3,6 @@
 # already satisfy the compressed invariants (a SparseMatrixCSC, the CSR view
 # of its transpose) without validation or copy.
 struct _Shared end
-"""Owned CSR matrix. Indices are 1-based; duplicate columns in a row are rejected.
-Real, complex and generic (e.g. BigFloat) scalars; explicit zeros are kept."""
 struct CSRMatrix{T,I<:Integer} <: SparseArrays.AbstractSparseMatrix{T,I}
     m::Int
     n::Int
@@ -48,7 +46,6 @@ Base.dataids(A::CSRMatrix)=(Base.dataids(A.rowptr)...,Base.dataids(A.colind)...,
     end
     zero(T)
 end
-"""Native CSR SpMV including transpose/adjoint and overlapping x/y snapshots."""
 function sparse_mul!(y::AbstractVector{T},A::CSRMatrix{T},x::AbstractVector{T},α=one(T),β=zero(T);trans=:N,threaded=true,parallel_threshold=262144) where T
     threaded=threaded && generic_threadsafe(T)
     AA=_op(A,trans)
