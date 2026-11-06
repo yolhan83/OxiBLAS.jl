@@ -60,10 +60,13 @@ end
 _tri_workers(::Type{T},n,rhs,threaded,config) where T=_gemm_workers(T,Float64(n)^2*rhs,threaded,config.parallel_threshold,min(rhs,Threads.nthreads()))
 # Pooled panels (_pooled_workspace) for the recursive products; the
 # reference and blocked algorithms use none.
-function _tri_pooled(f,::Type{T},B,n,left,algorithm,threaded,workspace,config) where T
-    (workspace!==nothing || algorithm in (:reference,:blocked)) && return f(workspace)
+function _tri_pooled(f::F,::Type{T},B,n,left,algorithm,threaded,workspace::Nothing,config) where {F,T}
+    algorithm in (:reference,:blocked) && return f(nothing)
     h=cld(n,2); m,p=left ? (h,size(B,2)) : (size(B,1),h)
     _pooled_workspace(f,T,nothing,m,p,h,config,_tri_workers(T,n,left ? size(B,2) : size(B,1),threaded,config))
+end
+function _tri_pooled(f::F,::Type{T},B,n,left,algorithm,threaded,workspace::GemmWorkspace{T},config) where {F,T}
+    f(workspace)
 end
 function _tri_options(::Type{T},B,n,left,algorithm,kernel,threaded,workspace,config) where T
     h=cld(n,2)
@@ -94,31 +97,163 @@ function _trmm_leaf_generic!(B,A,α,left,upper,unit)
     B
 end
 
-function _trmm_blocks!(B,A,α,left,upper,unit,bs,options)
+function _trmm_blocks_left!(B,A,α,upper,unit,bs,options)
     n=size(A,1)
-    n<=bs && return _trmm_leaf!(B,A,α,left,upper,unit;kernel=options.kernel,optimized=options.algorithm!==:reference)
+    n<=bs && return _trmm_leaf!(B,A,α,true,upper,unit,options.kernel,options.algorithm!==:reference)
     h=n÷2; lo=1:h; hi=h+1:n
     A1=view(A,lo,lo); A2=view(A,hi,hi)
-    B1=left ? view(B,lo,:) : view(B,:,lo)
-    B2=left ? view(B,hi,:) : view(B,:,hi)
-    if left && upper
-        _trmm_blocks!(B1,A1,α,left,upper,unit,bs,options)
+    B1=view(B,lo,:)
+    B2=view(B,hi,:)
+    if upper
+        _trmm_blocks_left!(B1,A1,α,upper,unit,bs,options)
         gemm!(B1,view(A,lo,hi),B2,α,one(α);options...)
-        _trmm_blocks!(B2,A2,α,left,upper,unit,bs,options)
-    elseif left
-        _trmm_blocks!(B2,A2,α,left,upper,unit,bs,options)
-        gemm!(B2,view(A,hi,lo),B1,α,one(α);options...)
-        _trmm_blocks!(B1,A1,α,left,upper,unit,bs,options)
-    elseif upper
-        _trmm_blocks!(B2,A2,α,left,upper,unit,bs,options)
-        gemm!(B2,B1,view(A,lo,hi),α,one(α);options...)
-        _trmm_blocks!(B1,A1,α,left,upper,unit,bs,options)
+        _trmm_blocks_left!(B2,A2,α,upper,unit,bs,options)
     else
-        _trmm_blocks!(B1,A1,α,left,upper,unit,bs,options)
-        gemm!(B1,B2,view(A,hi,lo),α,one(α);options...)
-        _trmm_blocks!(B2,A2,α,left,upper,unit,bs,options)
+        _trmm_blocks_left!(B2,A2,α,upper,unit,bs,options)
+        gemm!(B2,view(A,hi,lo),B1,α,one(α);options...)
+        _trmm_blocks_left!(B1,A1,α,upper,unit,bs,options)
     end
     B
+end
+
+function _trmm_blocks_right!(B,A,α,upper,unit,bs,options)
+    n=size(A,1)
+    n<=bs && return _trmm_leaf!(B,A,α,false,upper,unit,options.kernel,options.algorithm!==:reference)
+    h=n÷2; lo=1:h; hi=h+1:n
+    A1=view(A,lo,lo); A2=view(A,hi,hi)
+    B1=view(B,:,lo)
+    B2=view(B,:,hi)
+    if upper
+        _trmm_blocks_right!(B2,A2,α,upper,unit,bs,options)
+        gemm!(B2,B1,view(A,lo,hi),α,one(α);options...)
+        _trmm_blocks_right!(B1,A1,α,upper,unit,bs,options)
+    else
+        _trmm_blocks_right!(B1,A1,α,upper,unit,bs,options)
+        gemm!(B1,B2,view(A,hi,lo),α,one(α);options...)
+        _trmm_blocks_right!(B2,A2,α,upper,unit,bs,options)
+    end
+    B
+end
+
+function _trmm_blocks!(B,A,α,left,upper,unit,bs,options)
+    left ? _trmm_blocks_left!(B,A,α,upper,unit,bs,options) :
+           _trmm_blocks_right!(B,A,α,upper,unit,bs,options)
+end
+
+function _trmm_execute_noworkspace!(B::AbstractMatrix{T},A::OA,α::T,left::Bool,upper::Bool,unit::Bool,bs::Int,options) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    rhs=left ? size(B,2) : size(B,1)
+    workers=_tri_workers(T,size(A,1),rhs,options.threaded,options.config)
+    if workers<=1
+        return left ? _trmm_blocks_left!(B,A,α,upper,unit,bs,options) :
+                      _trmm_blocks_right!(B,A,α,upper,unit,bs,options)
+    end
+    opts=merge(options,(;threaded=false,workspace=nothing))
+    if left
+        _foreach_range(rhs,workers) do range,worker
+            out=view(B,:,range)
+            _trmm_blocks_left!(out,A,α,upper,unit,bs,opts)
+        end
+    else
+        _foreach_range(rhs,workers) do range,worker
+            out=view(B,range,:)
+            _trmm_blocks_right!(out,A,α,upper,unit,bs,opts)
+        end
+    end
+    B
+end
+
+function _trmm_execute_ws!(B::AbstractMatrix{T},A::OA,α::T,left::Bool,upper::Bool,unit::Bool,bs::Int,options,w::GemmWorkspace{T}) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    rhs=left ? size(B,2) : size(B,1)
+    wanted=_tri_workers(T,size(A,1),rhs,options.threaded,options.config)
+    workers=min(wanted,length(w.buffers))
+    if workers<=1
+        return left ? _trmm_blocks_left!(B,A,α,upper,unit,bs,options) :
+                      _trmm_blocks_right!(B,A,α,upper,unit,bs,options)
+    end
+    children=_workspace_children!(w,workers)
+    if left
+        function run_left()
+            _foreach_range(rhs,workers) do range,worker
+                out=view(B,:,range)
+                opts=merge(options,(;threaded=false,workspace=children[worker]))
+                _trmm_blocks_left!(out,A,α,upper,unit,bs,opts)
+            end
+            B
+        end
+        lock(run_left,w.guard)
+    else
+        function run_right()
+            _foreach_range(rhs,workers) do range,worker
+                out=view(B,range,:)
+                opts=merge(options,(;threaded=false,workspace=children[worker]))
+                _trmm_blocks_right!(out,A,α,upper,unit,bs,opts)
+            end
+            B
+        end
+        lock(run_right,w.guard)
+    end
+    B
+end
+
+function _trmm_execute!(B::AbstractMatrix{T},A::OA,α::T,left::Bool,upper::Bool,unit::Bool,bs::Int,options) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    w=options.workspace
+    if w isa GemmWorkspace{T}
+        _trmm_execute_ws!(B,A,α,left,upper,unit,bs,options,w)
+    else
+        _trmm_execute_noworkspace!(B,A,α,left,upper,unit,bs,options)
+    end
+end
+
+function _trmm_compute!(B::AbstractMatrix{T},opA::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                        blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                        workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    n=size(opA,1)
+    if n<=blocksize
+        return _trmm_leaf!(B,opA,α,left,upper,unit,kernel,algorithm!==:reference)
+    end
+    _tri_pooled(T,B,n,left,algorithm,threaded,workspace,config) do w
+        options=_tri_options(T,B,n,left,algorithm,kernel,threaded,w,config)
+        _trmm_execute!(B,opA,α,left,upper,unit,blocksize,options)
+        B
+    end
+    B
+end
+
+function _trmm_aliased!(B::AbstractMatrix{T},opA::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                        blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                        workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    S=_tri_snapshot(opA,upper,unit)::Matrix{T}
+    _trmm_compute!(B,S,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+end
+
+function _trmm_trans!(::Val{0},B::AbstractMatrix{T},A::AbstractMatrix{T},α::T,left::Bool,upper::Bool,unit::Bool,
+                      blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                      workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where T<:NativeFloat
+    if Base.mightalias(A,B)
+        _trmm_aliased!(B,A,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    else
+        _trmm_compute!(B,A,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    end
+end
+
+function _trmm_trans!(::Val{1},B::AbstractMatrix{T},A_trans::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                      blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                      workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    if Base.mightalias(A_trans,B)
+        _trmm_aliased!(B,A_trans,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    else
+        _trmm_compute!(B,A_trans,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    end
+end
+
+function _trmm_trans!(::Val{2},B::AbstractMatrix{T},A_adj::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                      blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                      workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    if Base.mightalias(A_adj,B)
+        _trmm_aliased!(B,A_adj,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    else
+        _trmm_compute!(B,A_adj,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    end
 end
 
 """In-place triangular multiplication; recursive blocks use native GEMM.
@@ -127,20 +262,24 @@ Only aliased A requires a full logical snapshot; B is never fully copied.
 """
 function trmm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α0=one(T);side=:L,uplo=:U,trans=:N,unit=false,
                blocksize=8,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
-    AA,n,upper=_tri_setup(A,trans,uplo,unit)
+    n=_square(A); uplo_upper=_uplo(uplo)
     side in (:L,:R) || throw(ArgumentError("side must be L or R"))
-    n==(side===:L ? size(B,1) : size(B,2)) || throw(DimensionMismatch("TRMM dimensions differ"))
+    left=side===:L
+    n==(left ? size(B,1) : size(B,2)) || throw(DimensionMismatch("TRMM dimensions differ"))
     _l3_validate(B,algorithm,kernel,blocksize)
     α=convert(T,α0)
+    tkind=_trans_kind(trans)
     _tri_workspace_call(workspace,B,A) do
         (iszero(α) || isempty(B)) && return _scale!(B,α)
-        aa=Base.mightalias(A,B) ? _tri_snapshot(AA,upper,unit) : AA
-        n<=blocksize && return _trmm_leaf!(B,aa,α,side===:L,upper,unit;kernel,optimized=algorithm!==:reference)
-        _tri_pooled(T,B,n,side===:L,algorithm,threaded,workspace,config) do w
-            options=_tri_options(T,B,n,side===:L,algorithm,kernel,threaded,w,config)
-            _tri_execute!(B,aa,α,side===:L,upper,unit,blocksize,options,false)
+        if tkind == 0
+            _trmm_trans!(Val(0),B,A,α,left,uplo_upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+        elseif tkind == 1
+            _trmm_trans!(Val(1),B,transpose(A),α,left,!uplo_upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+        else
+            _trmm_trans!(Val(2),B,adjoint(A),α,left,!uplo_upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
         end
     end
+    B
 end
 
 function _trsm_leaf_generic!(B,A,left,upper,unit)
@@ -172,32 +311,184 @@ function _trsm_leaf_generic!(B,A,left,upper,unit)
     B
 end
 
-function _trsm_blocks!(B,A,left,upper,unit,bs,options)
+function _trsm_blocks_left!(B,A,upper,unit,bs,options)
     n=size(A,1)
-    n<=bs && return _trsm_leaf!(B,A,left,upper,unit;kernel=options.kernel,optimized=options.algorithm!==:reference)
+    n<=bs && return _trsm_leaf!(B,A,true,upper,unit,options.kernel,options.algorithm!==:reference)
     h=n÷2; lo=1:h; hi=h+1:n
     A1=view(A,lo,lo); A2=view(A,hi,hi)
-    B1=left ? view(B,lo,:) : view(B,:,lo)
-    B2=left ? view(B,hi,:) : view(B,:,hi)
+    B1=view(B,lo,:)
+    B2=view(B,hi,:)
     α=one(eltype(B))
-    if left && upper
-        _trsm_blocks!(B2,A2,left,upper,unit,bs,options)
+    if upper
+        _trsm_blocks_left!(B2,A2,upper,unit,bs,options)
         gemm!(B1,view(A,lo,hi),B2,-α,α;options...)
-        _trsm_blocks!(B1,A1,left,upper,unit,bs,options)
-    elseif left
-        _trsm_blocks!(B1,A1,left,upper,unit,bs,options)
-        gemm!(B2,view(A,hi,lo),B1,-α,α;options...)
-        _trsm_blocks!(B2,A2,left,upper,unit,bs,options)
-    elseif upper
-        _trsm_blocks!(B1,A1,left,upper,unit,bs,options)
-        gemm!(B2,B1,view(A,lo,hi),-α,α;options...)
-        _trsm_blocks!(B2,A2,left,upper,unit,bs,options)
+        _trsm_blocks_left!(B1,A1,upper,unit,bs,options)
     else
-        _trsm_blocks!(B2,A2,left,upper,unit,bs,options)
-        gemm!(B1,B2,view(A,hi,lo),-α,α;options...)
-        _trsm_blocks!(B1,A1,left,upper,unit,bs,options)
+        _trsm_blocks_left!(B1,A1,upper,unit,bs,options)
+        gemm!(B2,view(A,hi,lo),B1,-α,α;options...)
+        _trsm_blocks_left!(B2,A2,upper,unit,bs,options)
     end
     B
+end
+
+function _trsm_blocks_right!(B,A,upper,unit,bs,options)
+    n=size(A,1)
+    n<=bs && return _trsm_leaf!(B,A,false,upper,unit,options.kernel,options.algorithm!==:reference)
+    h=n÷2; lo=1:h; hi=h+1:n
+    A1=view(A,lo,lo); A2=view(A,hi,hi)
+    B1=view(B,:,lo)
+    B2=view(B,:,hi)
+    α=one(eltype(B))
+    if upper
+        _trsm_blocks_right!(B1,A1,upper,unit,bs,options)
+        gemm!(B2,B1,view(A,lo,hi),-α,α;options...)
+        _trsm_blocks_right!(B2,A2,upper,unit,bs,options)
+    else
+        _trsm_blocks_right!(B2,A2,upper,unit,bs,options)
+        gemm!(B1,B2,view(A,hi,lo),-α,α;options...)
+        _trsm_blocks_right!(B1,A1,upper,unit,bs,options)
+    end
+    B
+end
+
+function _trsm_blocks!(B,A,left,upper,unit,bs,options)
+    left ? _trsm_blocks_left!(B,A,upper,unit,bs,options) :
+           _trsm_blocks_right!(B,A,upper,unit,bs,options)
+end
+
+function _trsm_execute_noworkspace!(B::AbstractMatrix{T},A::OA,α::T,left::Bool,upper::Bool,unit::Bool,bs::Int,options) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    rhs=left ? size(B,2) : size(B,1)
+    workers=_tri_workers(T,size(A,1),rhs,options.threaded,options.config)
+    if workers<=1
+        _scale!(B,α)
+        return left ? _trsm_blocks_left!(B,A,upper,unit,bs,options) :
+                      _trsm_blocks_right!(B,A,upper,unit,bs,options)
+    end
+    opts=merge(options,(;threaded=false,workspace=nothing))
+    if left
+        _foreach_range(rhs,workers) do range,worker
+            out=view(B,:,range)
+            _scale!(out,α)
+            _trsm_blocks_left!(out,A,upper,unit,bs,opts)
+        end
+    else
+        _foreach_range(rhs,workers) do range,worker
+            out=view(B,range,:)
+            _scale!(out,α)
+            _trsm_blocks_right!(out,A,upper,unit,bs,opts)
+        end
+    end
+    B
+end
+
+function _trsm_execute_ws!(B::AbstractMatrix{T},A::OA,α::T,left::Bool,upper::Bool,unit::Bool,bs::Int,options,w::GemmWorkspace{T}) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    rhs=left ? size(B,2) : size(B,1)
+    wanted=_tri_workers(T,size(A,1),rhs,options.threaded,options.config)
+    workers=min(wanted,length(w.buffers))
+    if workers<=1
+        _scale!(B,α)
+        return left ? _trsm_blocks_left!(B,A,upper,unit,bs,options) :
+                      _trsm_blocks_right!(B,A,upper,unit,bs,options)
+    end
+    children=_workspace_children!(w,workers)
+    if left
+        function run_left()
+            _foreach_range(rhs,workers) do range,worker
+                out=view(B,:,range)
+                opts=merge(options,(;threaded=false,workspace=children[worker]))
+                _scale!(out,α)
+                _trsm_blocks_left!(out,A,upper,unit,bs,opts)
+            end
+            B
+        end
+        lock(run_left,w.guard)
+    else
+        function run_right()
+            _foreach_range(rhs,workers) do range,worker
+                out=view(B,range,:)
+                opts=merge(options,(;threaded=false,workspace=children[worker]))
+                _scale!(out,α)
+                _trsm_blocks_right!(out,A,upper,unit,bs,opts)
+            end
+            B
+        end
+        lock(run_right,w.guard)
+    end
+    B
+end
+
+function _trsm_execute!(B::AbstractMatrix{T},A::OA,α::T,left::Bool,upper::Bool,unit::Bool,bs::Int,options) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    w=options.workspace
+    if w isa GemmWorkspace{T}
+        _trsm_execute_ws!(B,A,α,left,upper,unit,bs,options,w)
+    else
+        _trsm_execute_noworkspace!(B,A,α,left,upper,unit,bs,options)
+    end
+end
+
+function _trsm_compute!(B::AbstractMatrix{T},opA::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                        blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                        workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    n=size(opA,1)
+    if n<=blocksize
+        _scale!(B,α)
+        return _trsm_leaf!(B,opA,left,upper,unit,kernel,algorithm!==:reference)
+    end
+    _tri_pooled(T,B,n,left,algorithm,threaded,workspace,config) do w
+        options=_tri_options(T,B,n,left,algorithm,kernel,threaded,w,config)
+        _trsm_execute!(B,opA,α,left,upper,unit,blocksize,options)
+        B
+    end
+    B
+end
+
+function _trsm_aliased!(B::AbstractMatrix{T},opA::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                        blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                        workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    S=_tri_snapshot(opA,upper,unit)::Matrix{T}
+    _trsm_compute!(B,S,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+end
+
+@inline function _check_singular!(opA, unit::Bool)
+    if !unit
+        n=size(opA,1)
+        @inbounds for i in 1:n
+            iszero(opA[i,i]) && throw(SingularException(i))
+        end
+    end
+end
+
+function _trsm_trans!(::Val{0},B::AbstractMatrix{T},A::AbstractMatrix{T},α::T,left::Bool,upper::Bool,unit::Bool,
+                      blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                      workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where T<:NativeFloat
+    _check_singular!(A,unit)
+    if Base.mightalias(A,B)
+        _trsm_aliased!(B,A,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    else
+        _trsm_compute!(B,A,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    end
+end
+
+function _trsm_trans!(::Val{1},B::AbstractMatrix{T},A_trans::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                      blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                      workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    _check_singular!(A_trans,unit)
+    if Base.mightalias(A_trans,B)
+        _trsm_aliased!(B,A_trans,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    else
+        _trsm_compute!(B,A_trans,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    end
+end
+
+function _trsm_trans!(::Val{2},B::AbstractMatrix{T},A_adj::OA,α::T,left::Bool,upper::Bool,unit::Bool,
+                      blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,
+                      workspace::Union{Nothing,GemmWorkspace{T}},config::GemmConfig) where {T<:NativeFloat, OA<:AbstractMatrix{T}}
+    _check_singular!(A_adj,unit)
+    if Base.mightalias(A_adj,B)
+        _trsm_aliased!(B,A_adj,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    else
+        _trsm_compute!(B,A_adj,α,left,upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+    end
 end
 
 """Triangular solve with recursive native-GEMM updates and reusable panels.
@@ -205,55 +496,24 @@ A singular nonunit diagonal is reported before any mutation of B.
 """
 function trsm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α0=one(T);side=:L,uplo=:U,trans=:N,unit=false,
                blocksize=8,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
-    AA,n,upper=_tri_setup(A,trans,uplo,unit)
+    n=_square(A); uplo_upper=_uplo(uplo)
     side in (:L,:R) || throw(ArgumentError("side must be L or R"))
-    n==(side===:L ? size(B,1) : size(B,2)) || throw(DimensionMismatch("TRSM dimensions differ"))
+    left=side===:L
+    n==(left ? size(B,1) : size(B,2)) || throw(DimensionMismatch("TRSM dimensions differ"))
     _l3_validate(B,algorithm,kernel,blocksize)
     α=convert(T,α0)
+    tkind=_trans_kind(trans)
     _tri_workspace_call(workspace,B,A) do
         (iszero(α) || isempty(B)) && return _scale!(B,α)
-        aa=Base.mightalias(A,B) ? _tri_snapshot(AA,upper,unit) : AA
-        if !unit
-            @inbounds for i in 1:n
-                iszero(aa[i,i]) && throw(SingularException(i))
-            end
-        end
-        if n<=blocksize
-            _scale!(B,α)
-            return _trsm_leaf!(B,aa,side===:L,upper,unit;kernel,optimized=algorithm!==:reference)
-        end
-        _tri_pooled(T,B,n,side===:L,algorithm,threaded,workspace,config) do w
-            options=_tri_options(T,B,n,side===:L,algorithm,kernel,threaded,w,config)
-            _tri_execute!(B,aa,α,side===:L,upper,unit,blocksize,options,true)
+        if tkind == 0
+            _trsm_trans!(Val(0),B,A,α,left,uplo_upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+        elseif tkind == 1
+            _trsm_trans!(Val(1),B,transpose(A),α,left,!uplo_upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
+        else
+            _trsm_trans!(Val(2),B,adjoint(A),α,left,!uplo_upper,unit,blocksize,algorithm,kernel,threaded,workspace,config)
         end
     end
-end
-
-function _tri_execute!(B,A,α,left,upper,unit,bs,options,solving)
-    rhs=left ? size(B,2) : size(B,1)
-    w=options.workspace
-    # One assignment: workers is captured by run().
-    wanted=_tri_workers(eltype(B),size(A,1),rhs,options.threaded,options.config)
-    workers=w isa GemmWorkspace ? min(wanted,length(w.buffers)) : wanted
-    if workers<=1
-        solving && _scale!(B,α)
-        return solving ? _trsm_blocks!(B,A,left,upper,unit,bs,options) : _trmm_blocks!(B,A,α,left,upper,unit,bs,options)
-    end
-    function run()
-        children=w isa GemmWorkspace ? _workspace_children!(w,workers) : fill(nothing,workers)
-        _foreach_range(rhs,workers) do range,worker
-            out=left ? view(B,:,range) : view(B,range,:)
-            opts=merge(options,(;threaded=false,workspace=children[worker]))
-            if solving
-                _scale!(out,α)
-                _trsm_blocks!(out,A,left,upper,unit,bs,opts)
-            else
-                _trmm_blocks!(out,A,α,left,upper,unit,bs,opts)
-            end
-        end
-        B
-    end
-    w isa GemmWorkspace ? lock(run,w.guard) : run()
+    B
 end
 
 function _triangle_scale!(C,β,upper,hermitian)

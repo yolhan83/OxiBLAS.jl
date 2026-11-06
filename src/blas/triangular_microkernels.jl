@@ -200,7 +200,10 @@ function _tri_right_simd!(B::StridedMatrix{T},A,alpha,upper,unit,solving,::Val{W
     end
     B
 end
-function _trmm_leaf!(B::StridedMatrix{T},A,alpha,left,upper,unit;kernel=:auto,optimized=true) where {T<:NativeFloat}
+function _trmm_leaf!(B::AbstractMatrix{T},A,alpha,left::Bool,upper::Bool,unit::Bool,kernel::Symbol,optimized::Bool) where {T<:NativeFloat}
+    _trmm_leaf_generic!(B,A,alpha,left,upper,unit)
+end
+function _trmm_leaf!(B::StridedMatrix{T},A,alpha,left::Bool,upper::Bool,unit::Bool,kernel::Symbol,optimized::Bool) where {T<:NativeFloat}
     (!optimized || stride(B,1)!=1) && return _trmm_leaf_generic!(B,A,alpha,left,upper,unit)
     left && T<:RealFloat && size(B,1)<=8 && return _tri_left_small!(B,A,alpha,Val(size(B,1)),Val(upper),Val(unit),Val(false))
     !left && T<:RealFloat && size(B,2)<=8 && return _tri_right_small!(B,A,alpha,Val(size(B,2)),Val(upper),Val(unit),Val(false))
@@ -209,7 +212,13 @@ function _trmm_leaf!(B::StridedMatrix{T},A,alpha,left,upper,unit;kernel=:auto,op
     !left && _can_pointer(B) && kind!==:scalar && size(B,1)>=width && return _tri_right_simd!(B,A,alpha,upper,unit,false,Val(width))
     _trmm_leaf_generic!(B,A,alpha,left,upper,unit)
 end
-function _trsm_leaf!(B::StridedMatrix{T},A,left,upper,unit;kernel=:auto,optimized=true) where {T<:NativeFloat}
+_trmm_leaf!(B::AbstractMatrix{T},A,alpha,left,upper,unit;kernel=:auto,optimized=true) where {T<:NativeFloat} =
+    _trmm_leaf!(B,A,alpha,left,upper,unit,kernel,optimized)
+
+function _trsm_leaf!(B::AbstractMatrix{T},A,left::Bool,upper::Bool,unit::Bool,kernel::Symbol,optimized::Bool) where {T<:NativeFloat}
+    _trsm_leaf_generic!(B,A,left,upper,unit)
+end
+function _trsm_leaf!(B::StridedMatrix{T},A,left::Bool,upper::Bool,unit::Bool,kernel::Symbol,optimized::Bool) where {T<:NativeFloat}
     (!optimized || stride(B,1)!=1) && return _trsm_leaf_generic!(B,A,left,upper,unit)
     left && T<:RealFloat && size(B,1)<=8 && return _tri_left_small!(B,A,one(T),Val(size(B,1)),Val(upper),Val(unit),Val(true))
     !left && T<:RealFloat && size(B,2)<=8 && return _tri_right_small!(B,A,one(T),Val(size(B,2)),Val(upper),Val(unit),Val(true))
@@ -218,3 +227,5 @@ function _trsm_leaf!(B::StridedMatrix{T},A,left,upper,unit;kernel=:auto,optimize
     !left && _can_pointer(B) && kind!==:scalar && size(B,1)>=width && return _tri_right_simd!(B,A,one(T),upper,unit,true,Val(width))
     _trsm_leaf_generic!(B,A,left,upper,unit)
 end
+_trsm_leaf!(B::AbstractMatrix{T},A,left,upper,unit;kernel=:auto,optimized=true) where {T<:NativeFloat} =
+    _trsm_leaf!(B,A,left,upper,unit,kernel,optimized)

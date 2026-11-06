@@ -14,6 +14,7 @@ const TEST_GROUPS=[
         ("blas/batched.jl",:core),
         ("blas/level3_parallel.jl",:core),
         ("blas/continuation_parallel.jl",:core),
+        ("blas/triangular_inference.jl",:core),
         ("blas/level3_blocked.jl",:extended),
     ],
     "structured"=>[
