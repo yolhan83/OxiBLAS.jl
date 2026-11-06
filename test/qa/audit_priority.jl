@@ -79,7 +79,7 @@ Base.getindex(::AuditNoReadVector,i::Int)=error("alpha-zero input read")
         duplicate=view(zeros(T,4),[1,1,2,3]);saved=copy(duplicate)
         @test_throws ArgumentError trmv!(duplicate,ones(T,4,4))
         @test duplicate==saved
-        @test_throws ArgumentError axpy!(duplicate,ones(T,4))
+        @test_throws ArgumentError OxiBLAS.axpy!(duplicate,ones(T,4))
         @test_throws ArgumentError scal!(duplicate,T(2))
     end
 end
