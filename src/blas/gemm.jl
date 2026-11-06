@@ -47,10 +47,11 @@ mutable struct GemmWorkspace{T}
     tiles::Vector{Matrix{T}}
     jobs::Vector{Tuple{Int,Int}}
     jobkey::Tuple{Int,Int,Bool}
+    edge_tiles::Vector{Matrix{T}}
 end
 
 GemmWorkspace(buffers::Vector{_PackBuffer{T}},acap::Int,bcap::Int,guard::ReentrantLock) where T =
-    GemmWorkspace{T}(buffers,acap,bcap,guard,GemmWorkspace{T}[],Matrix{T}[],Tuple{Int,Int}[],(0,0,false))
+    GemmWorkspace{T}(buffers,acap,bcap,guard,GemmWorkspace{T}[],Matrix{T}[],Tuple{Int,Int}[],(0,0,false),Matrix{T}[])
 
 # Caller owns the parent's guard for the entire lifetime of these borrowed
 # contexts. Child locks are distinct: spawned tasks never re-enter that guard.
@@ -70,6 +71,17 @@ function _workspace_tiles!(w::GemmWorkspace{T},workers,bs) where T
         size(w.tiles[i],1)<bs && (w.tiles[i]=Matrix{T}(undef,bs,bs))
     end
     w.tiles
+end
+
+function _workspace_edge_tiles!(w::GemmWorkspace{T},workers,mr,nr) where T
+    while length(w.edge_tiles)<workers
+        push!(w.edge_tiles,Matrix{T}(undef,mr,nr))
+    end
+    for i in 1:workers
+        tile=w.edge_tiles[i]
+        size(tile)!=(mr,nr) && (w.edge_tiles[i]=Matrix{T}(undef,mr,nr))
+    end
+    w.edge_tiles
 end
 
 function GemmWorkspace(::Type{T}, m::Integer, n::Integer, k::Integer;
@@ -348,14 +360,16 @@ end
 # SYRK/HERK/GEMMT: micro tiles outside it are skipped, and tiles crossing the
 # diagonal go through the edge scratch tile (tri requires algorithm :simd).
 function _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
-                         ::Val{W},::Val{R},::Val{N},algorithm,tri=0) where {T,W,R,N}
+                         ::Val{W},::Val{R},::Val{N},algorithm,edge=nothing,tri=0) where {T,W,R,N}
     mr,nr=W*R,N
     k=size(A,2)
     # Edge tiles: panels are zero padded, so the full SIMD tile is computed
     # into this scratch tile and only its valid part is added to C (the
     # scalar edge kernel cost about 15% at 256x256 Float64, where 4 of 256
     # columns fall in a partial 6-column tile).
-    edge=algorithm===:simd && _can_pointer(C) && (T<:Complex || (T<:RealFloat && W>1)) ? Matrix{T}(undef,mr,nr) : nothing
+    if edge===nothing && algorithm===:simd && _can_pointer(C) && (T<:Complex || (T<:RealFloat && W>1))
+        edge=Matrix{T}(undef,mr,nr)
+    end
     GC.@preserve buf C edge begin
         pa=pointer(buf.a,buf.ai)
         pb=pointer(buf.b,buf.bi)
@@ -417,6 +431,9 @@ function _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
     end
     C
 end
+_packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
+                ::Val{W},::Val{R},::Val{N},algorithm,tri::Integer) where {T,W,R,N} =
+    _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(W),Val(R),Val(N),algorithm,nothing,tri)
 
 function _workspace_fits(w::GemmWorkspace,m,n,k,config,mr,nr)
     !isempty(w.buffers) && w.acap>=cld(min(m,config.mc),mr)*mr*min(k,config.kc) && w.bcap>=cld(min(n,config.nc),nr)*nr*min(k,config.kc)
@@ -446,6 +463,9 @@ function _workspace_operands_check(w::GemmWorkspace,operands...;tiles=false)
         for tile in w.tiles,A in operands
             Base.mightalias(tile,A) && throw(ArgumentError("operand aliases owned triangular tile storage"))
         end
+    end
+    for tile in w.edge_tiles,A in operands
+        Base.mightalias(tile,A) && throw(ArgumentError("operand aliases owned edge tile storage"))
     end
     nothing
 end
@@ -504,21 +524,39 @@ function _run_packed!(C,A,B,α,β,w,config,shape,algorithm,threaded,tri=0)
             cols=cbound(j)*nr+1:min(n,cbound(j+1)*nr)
             (rows,cols)
         end
-        if nt<=1
-            _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,Val(width),Val(r),Val(nr),algorithm,tri)
-        else
-            @sync begin
-                for worker in 2:nt
-                    rows,cols=region(worker)
-                    (isempty(rows) || isempty(cols)) && continue
-                    # Buffer follows this task, never threadid(): safe under migration.
-                    let buf=w.buffers[worker], rows=rows, cols=cols
-                        Threads.@spawn _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(width),Val(r),Val(nr),algorithm,tri)
+        needs_edge=algorithm===:simd && _can_pointer(C) && (eltype(C)<:Complex || (eltype(C)<:RealFloat && width>1))
+        if needs_edge
+            edge_tiles=_workspace_edge_tiles!(w,nt,mr,nr)
+            if nt<=1
+                _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,Val(width),Val(r),Val(nr),algorithm,edge_tiles[1],tri)
+            else
+                @sync begin
+                    for worker in 2:nt
+                        rows,cols=region(worker)
+                        (isempty(rows) || isempty(cols)) && continue
+                        let buf=w.buffers[worker], rows=rows, cols=cols, edge=edge_tiles[worker]
+                            Threads.@spawn _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(width),Val(r),Val(nr),algorithm,edge,tri)
+                        end
                     end
+                    rows,cols=region(1)
+                    isempty(rows) || isempty(cols) || _packed_region!(C,A,B,α,β,w.buffers[1],config,rows,cols,Val(width),Val(r),Val(nr),algorithm,edge_tiles[1],tri)
                 end
-                # The caller computes the first region instead of only waiting.
-                rows,cols=region(1)
-                isempty(rows) || isempty(cols) || _packed_region!(C,A,B,α,β,w.buffers[1],config,rows,cols,Val(width),Val(r),Val(nr),algorithm,tri)
+            end
+        else
+            if nt<=1
+                _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,Val(width),Val(r),Val(nr),algorithm,nothing,tri)
+            else
+                @sync begin
+                    for worker in 2:nt
+                        rows,cols=region(worker)
+                        (isempty(rows) || isempty(cols)) && continue
+                        let buf=w.buffers[worker], rows=rows, cols=cols
+                            Threads.@spawn _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(width),Val(r),Val(nr),algorithm,nothing,tri)
+                        end
+                    end
+                    rows,cols=region(1)
+                    isempty(rows) || isempty(cols) || _packed_region!(C,A,B,α,β,w.buffers[1],config,rows,cols,Val(width),Val(r),Val(nr),algorithm,nothing,tri)
+                end
             end
         end
     end
