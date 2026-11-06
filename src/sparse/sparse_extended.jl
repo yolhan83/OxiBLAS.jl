@@ -253,72 +253,288 @@ function sparse_mul!(Y::AbstractMatrix{T},A::Union{CSRMatrix{T},CSCMatrix{T},COO
     Y
 end
 
-"""Gustavson CSR×CSR multiplication with a sparse row accumulator and sorted
-output rows. No dense matrix expansion or external sparse backend.
-"""
-function sparse_matmul(A::CSRMatrix{T},B::CSRMatrix{T};droptol=zero(real(T))) where T
-    A.n==B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
-    droptol>=0 || throw(ArgumentError("negative sparse drop tolerance"))
-    ptr=Vector{Int}(undef,A.m+1); ptr[1]=1
-    cols=Int[]; vals=T[]; marks=zeros(Int,B.n); sums=zeros(T,B.n)
-    touched=Int[]; sizehint!(touched,min(B.n,64))
-    for i in 1:A.m
+@inline function _spgemm_workers(dim::Integer, work::Real, threaded::Bool, limit::Integer=Threads.nthreads(); threshold::Real=30_000)
+    (threaded && limit >= 2 && work >= threshold) || return 1
+    w_dim = div(dim, 32)
+    w_work = floor(Int, work / 6_000)
+    w = min(w_dim, w_work)
+    w >= 2 ? clamp(w, 2, limit) : 1
+end
+
+function _sparse_matmul_serial(A::CSRMatrix{T}, B::CSRMatrix{T}, droptol::Real) where T
+    ptr = Vector{Int}(undef, A.m + 1); ptr[1] = 1
+    cols = Int[]; vals = T[]; marks = zeros(Int, B.n); sums = Vector{T}(undef, B.n)
+    touched = Int[]; sizehint!(touched, min(B.n, 64))
+    @inbounds for i in 1:A.m
         empty!(touched)
         for p in A.rowptr[i]:A.rowptr[i+1]-1
-            k=A.colind[p]; a=A.values[p]
+            k = A.colind[p]; a = A.values[p]
             for q in B.rowptr[k]:B.rowptr[k+1]-1
-                j=B.colind[q]
-                if marks[j]!=i
-                    marks[j]=i; sums[j]=zero(T); push!(touched,j)
+                j = B.colind[q]
+                v = a * B.values[q]
+                if marks[j] != i
+                    marks[j] = i; sums[j] = v; push!(touched, j)
+                else
+                    sums[j] += v
                 end
-                sums[j]+=a*B.values[q]
             end
         end
-        if length(touched)<=32
-            sort!(touched,alg=InsertionSort)
+        if length(touched) <= 32
+            sort!(touched, alg=InsertionSort)
         else
             sort!(touched)
         end
         for j in touched
-            !(abs(sums[j])<=droptol) && (push!(cols,j); push!(vals,sums[j]))
+            !(abs(sums[j]) <= droptol) && (push!(cols, j); push!(vals, sums[j]))
         end
-        ptr[i+1]=length(vals)+1
+        ptr[i+1] = length(vals) + 1
     end
-    CSRMatrix(_Shared(),A.m,B.n,ptr,cols,vals)
+    CSRMatrix(_Shared(), A.m, B.n, ptr, cols, vals)
 end
 
-"""Gustavson CSC×CSC multiplication with a sparse column accumulator and sorted
-output columns. No conversion to CSR or dense matrix expansion.
+"""Gustavson CSR×CSR multiplication with a sparse row accumulator and sorted
+output rows. Uses multi-threading for sufficiently large workloads.
+No dense matrix expansion or external sparse backend.
 """
-function sparse_matmul(A::CSCMatrix{T},B::CSCMatrix{T};droptol=zero(real(T))) where T
-    A.n==B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
-    droptol>=0 || throw(ArgumentError("negative sparse drop tolerance"))
-    colptr=Vector{Int}(undef,B.n+1); colptr[1]=1
-    rowind=Int[]; values=T[]; marks=zeros(Int,A.m); sums=zeros(T,A.m)
-    touched=Int[]; sizehint!(touched,min(A.m,64))
-    for j in 1:B.n
+function sparse_matmul(A::CSRMatrix{T}, B::CSRMatrix{T}; droptol=zero(real(T)), threaded=true, parallel_threshold=30_000) where T
+    A.n == B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
+    droptol >= 0 || throw(ArgumentError("negative sparse drop tolerance"))
+    parallel_threshold >= 0 || throw(ArgumentError("negative parallel threshold"))
+    
+    threaded = threaded && generic_threadsafe(T)
+    work = Float64(length(A.values)) * (Float64(length(B.values)) / max(1, B.m))
+    workers = _spgemm_workers(A.m, work, threaded; threshold=parallel_threshold)
+    
+    if workers <= 1
+        return _sparse_matmul_serial(A, B, droptol)
+    end
+    
+    worker_cols = Vector{Vector{Int}}(undef, workers)
+    worker_vals = Vector{Vector{T}}(undef, workers)
+    worker_row_counts = Vector{Vector{Int}}(undef, workers)
+    est_nnz_per_row = max(4, round(Int, length(A.values) / max(1, A.m)))
+    
+    @sync for w in 1:workers
+        Threads.@spawn begin
+            rows = _task_range(A.m, w, workers)
+            num_rows = length(rows)
+            local_cols = Int[]
+            local_vals = T[]
+            sizehint!(local_cols, num_rows * est_nnz_per_row)
+            sizehint!(local_vals, num_rows * est_nnz_per_row)
+            
+            local_counts = Vector{Int}(undef, num_rows)
+            marks = zeros(Int, B.n)
+            sums = Vector{T}(undef, B.n)
+            touched = Int[]
+            sizehint!(touched, min(B.n, 64))
+            
+            idx = 1
+            @inbounds for i in rows
+                empty!(touched)
+                for p in A.rowptr[i]:A.rowptr[i+1]-1
+                    k = A.colind[p]; a = A.values[p]
+                    for q in B.rowptr[k]:B.rowptr[k+1]-1
+                        j = B.colind[q]
+                        v = a * B.values[q]
+                        if marks[j] != i
+                            marks[j] = i; sums[j] = v; push!(touched, j)
+                        else
+                            sums[j] += v
+                        end
+                    end
+                end
+                if length(touched) <= 32
+                    sort!(touched, alg=InsertionSort)
+                else
+                    sort!(touched)
+                end
+                row_nnz = 0
+                for j in touched
+                    if !(abs(sums[j]) <= droptol)
+                        push!(local_cols, j)
+                        push!(local_vals, sums[j])
+                        row_nnz += 1
+                    end
+                end
+                local_counts[idx] = row_nnz
+                idx += 1
+            end
+            
+            worker_cols[w] = local_cols
+            worker_vals[w] = local_vals
+            worker_row_counts[w] = local_counts
+        end
+    end
+    
+    ptr = Vector{Int}(undef, A.m + 1)
+    ptr[1] = 1
+    cur_ptr = 1
+    cur_row = 1
+    for w in 1:workers
+        counts = worker_row_counts[w]
+        for c in counts
+            cur_ptr += c
+            cur_row += 1
+            ptr[cur_row] = cur_ptr
+        end
+    end
+    total_nnz = cur_ptr - 1
+    
+    final_cols = Vector{Int}(undef, total_nnz)
+    final_vals = Vector{T}(undef, total_nnz)
+    
+    offset = 0
+    for w in 1:workers
+        cols_w = worker_cols[w]
+        vals_w = worker_vals[w]
+        len = length(cols_w)
+        if len > 0
+            copyto!(final_cols, offset + 1, cols_w, 1, len)
+            copyto!(final_vals, offset + 1, vals_w, 1, len)
+            offset += len
+        end
+    end
+    
+    CSRMatrix(_Shared(), A.m, B.n, ptr, final_cols, final_vals)
+end
+
+function _sparse_matmul_serial(A::CSCMatrix{T}, B::CSCMatrix{T}, droptol::Real) where T
+    colptr = Vector{Int}(undef, B.n + 1); colptr[1] = 1
+    rowind = Int[]; values = T[]; marks = zeros(Int, A.m); sums = Vector{T}(undef, A.m)
+    touched = Int[]; sizehint!(touched, min(A.m, 64))
+    @inbounds for j in 1:B.n
         empty!(touched)
         for q in B.colptr[j]:B.colptr[j+1]-1
-            k=B.rowind[q]; b=B.values[q]
+            k = B.rowind[q]; b = B.values[q]
             for p in A.colptr[k]:A.colptr[k+1]-1
-                i=A.rowind[p]
-                if marks[i]!=j
-                    marks[i]=j; sums[i]=zero(T); push!(touched,i)
+                i = A.rowind[p]
+                v = A.values[p] * b
+                if marks[i] != j
+                    marks[i] = j; sums[i] = v; push!(touched, i)
+                else
+                    sums[i] += v
                 end
-                sums[i]+=A.values[p]*b
             end
         end
-        if length(touched)<=32
-            sort!(touched,alg=InsertionSort)
+        if length(touched) <= 32
+            sort!(touched, alg=InsertionSort)
         else
             sort!(touched)
         end
         for i in touched
-            !(abs(sums[i])<=droptol) && (push!(rowind,i); push!(values,sums[i]))
+            !(abs(sums[i]) <= droptol) && (push!(rowind, i); push!(values, sums[i]))
         end
-        colptr[j+1]=length(values)+1
+        colptr[j+1] = length(values) + 1
     end
-    CSCMatrix(_Shared(),A.m,B.n,colptr,rowind,values)
+    CSCMatrix(_Shared(), A.m, B.n, colptr, rowind, values)
+end
+
+"""Gustavson CSC×CSC multiplication with a sparse column accumulator and sorted
+output columns. Uses multi-threading for sufficiently large workloads.
+No conversion to CSR or dense matrix expansion.
+"""
+function sparse_matmul(A::CSCMatrix{T}, B::CSCMatrix{T}; droptol=zero(real(T)), threaded=true, parallel_threshold=30_000) where T
+    A.n == B.m || throw(DimensionMismatch("sparse matrix product dimensions differ"))
+    droptol >= 0 || throw(ArgumentError("negative sparse drop tolerance"))
+    parallel_threshold >= 0 || throw(ArgumentError("negative parallel threshold"))
+    
+    threaded = threaded && generic_threadsafe(T)
+    work = Float64(length(B.values)) * (Float64(length(A.values)) / max(1, A.n))
+    workers = _spgemm_workers(B.n, work, threaded; threshold=parallel_threshold)
+    
+    if workers <= 1
+        return _sparse_matmul_serial(A, B, droptol)
+    end
+    
+    worker_rows = Vector{Vector{Int}}(undef, workers)
+    worker_vals = Vector{Vector{T}}(undef, workers)
+    worker_col_counts = Vector{Vector{Int}}(undef, workers)
+    est_nnz_per_col = max(4, round(Int, length(B.values) / max(1, B.n)))
+    
+    @sync for w in 1:workers
+        Threads.@spawn begin
+            cols = _task_range(B.n, w, workers)
+            num_cols = length(cols)
+            local_rowind = Int[]
+            local_values = T[]
+            sizehint!(local_rowind, num_cols * est_nnz_per_col)
+            sizehint!(local_values, num_cols * est_nnz_per_col)
+            
+            local_counts = Vector{Int}(undef, num_cols)
+            marks = zeros(Int, A.m)
+            sums = Vector{T}(undef, A.m)
+            touched = Int[]
+            sizehint!(touched, min(A.m, 64))
+            
+            idx = 1
+            @inbounds for j in cols
+                empty!(touched)
+                for q in B.colptr[j]:B.colptr[j+1]-1
+                    k = B.rowind[q]; b = B.values[q]
+                    for p in A.colptr[k]:A.colptr[k+1]-1
+                        i = A.rowind[p]
+                        v = A.values[p] * b
+                        if marks[i] != j
+                            marks[i] = j; sums[i] = v; push!(touched, i)
+                        else
+                            sums[i] += v
+                        end
+                    end
+                end
+                if length(touched) <= 32
+                    sort!(touched, alg=InsertionSort)
+                else
+                    sort!(touched)
+                end
+                col_nnz = 0
+                for i in touched
+                    if !(abs(sums[i]) <= droptol)
+                        push!(local_rowind, i)
+                        push!(local_values, sums[i])
+                        col_nnz += 1
+                    end
+                end
+                local_counts[idx] = col_nnz
+                idx += 1
+            end
+            
+            worker_rows[w] = local_rowind
+            worker_vals[w] = local_values
+            worker_col_counts[w] = local_counts
+        end
+    end
+    
+    colptr = Vector{Int}(undef, B.n + 1)
+    colptr[1] = 1
+    cur_ptr = 1
+    cur_col = 1
+    for w in 1:workers
+        counts = worker_col_counts[w]
+        for c in counts
+            cur_ptr += c
+            cur_col += 1
+            colptr[cur_col] = cur_ptr
+        end
+    end
+    total_nnz = cur_ptr - 1
+    
+    final_rows = Vector{Int}(undef, total_nnz)
+    final_vals = Vector{T}(undef, total_nnz)
+    
+    offset = 0
+    for w in 1:workers
+        rows_w = worker_rows[w]
+        vals_w = worker_vals[w]
+        len = length(rows_w)
+        if len > 0
+            copyto!(final_rows, offset + 1, rows_w, 1, len)
+            copyto!(final_vals, offset + 1, vals_w, 1, len)
+            offset += len
+        end
+    end
+    
+    CSCMatrix(_Shared(), A.m, B.n, colptr, final_rows, final_vals)
 end
 function sparse_matmul(A::CSCMatrix{T1},B::CSCMatrix{T2};kwargs...) where {T1,T2}
     T=promote_type(T1,T2)
