@@ -300,24 +300,194 @@ function _mul_symmetric!(C,S,X,α,β,left)
     end
     herm ? hemm!(C,P,X,α,β;side=left ? :L : :R,uplo) : symm!(C,P,X,α,β;side=left ? :L : :R,uplo)
 end
-function _band_matrix(X)
-    kl,ku=X isa _LA.Bidiagonal ? (X.uplo=='U' ? (0,1) : (1,0)) : (1,1)
-    band_matrix(X;kl,ku)   # reads the band only
-end
-function _mul_band!(C,Bd,X,α,β,left)
-    P=_band_matrix(Bd)
-    if left
-        ndims(X)==1 && return gbmv!(C,P,X,α,β)
-        for j in axes(X,2)
-            gbmv!(view(C,:,j),P,view(X,:,j),α,β)
+function _mul_bidiag_u_left!(C, dv, ev, X, α, β)
+    n = length(dv)
+    n == 0 && return C
+    if n == 1
+        if ndims(X) == 1
+            @inbounds begin
+                v = dv[1] * X[1]
+                C[1] = iszero(β) ? α * v : α * v + β * C[1]
+            end
+        else
+            @inbounds for j in axes(X, 2)
+                v = dv[1] * X[1, j]
+                C[1, j] = iszero(β) ? α * v : α * v + β * C[1, j]
+            end
+        end
+        return C
+    end
+    if ndims(X) == 1
+        @inbounds begin
+            b0, b1 = X[1], X[2]
+            v = dv[1] * b0 + ev[1] * b1
+            C[1] = iszero(β) ? α * v : α * v + β * C[1]
+            for i in 2:n-1
+                b0, b1 = b1, X[i+1]
+                v = dv[i] * b0 + ev[i] * b1
+                C[i] = iszero(β) ? α * v : α * v + β * C[i]
+            end
+            v = dv[n] * b1
+            C[n] = iszero(β) ? α * v : α * v + β * C[n]
         end
     else
-        # C[i,:] = α X[i,:]·Band + β C[i,:] = (Bandᵀ X[i,:]ᵀ) row by row.
-        for i in axes(X,1)
-            gbmv!(view(C,i,:),P,view(X,i,:),α,β;trans=:T)
+        @inbounds for j in axes(X, 2)
+            b0, b1 = X[1, j], X[2, j]
+            v = dv[1] * b0 + ev[1] * b1
+            C[1, j] = iszero(β) ? α * v : α * v + β * C[1, j]
+            for i in 2:n-1
+                b0, b1 = b1, X[i+1, j]
+                v = dv[i] * b0 + ev[i] * b1
+                C[i, j] = iszero(β) ? α * v : α * v + β * C[i, j]
+            end
+            v = dv[n] * b1
+            C[n, j] = iszero(β) ? α * v : α * v + β * C[n, j]
         end
     end
     C
+end
+
+function _mul_bidiag_u_right!(C, X, dv, ev, α, β)
+    n = length(dv)
+    n == 0 && return C
+    m_rows = axes(X, 1)
+    if n >= 1
+        @inbounds for i in m_rows
+            v = X[i, 1] * dv[1]
+            C[i, 1] = iszero(β) ? α * v : α * v + β * C[i, 1]
+        end
+        @inbounds for j in 2:n, i in m_rows
+            v = X[i, j] * dv[j] + X[i, j-1] * ev[j-1]
+            C[i, j] = iszero(β) ? α * v : α * v + β * C[i, j]
+        end
+    end
+    C
+end
+
+function _mul_bidiag_l_left!(C, dv, ev, X, α, β)
+    n = length(dv)
+    n == 0 && return C
+    if ndims(X) == 1
+        @inbounds begin
+            v = dv[1] * X[1]
+            C[1] = iszero(β) ? α * v : α * v + β * C[1]
+            for i in 2:n
+                v = dv[i] * X[i] + ev[i-1] * X[i-1]
+                C[i] = iszero(β) ? α * v : α * v + β * C[i]
+            end
+        end
+    else
+        @inbounds for j in axes(X, 2)
+            v = dv[1] * X[1, j]
+            C[1, j] = iszero(β) ? α * v : α * v + β * C[1, j]
+            for i in 2:n
+                v = dv[i] * X[i, j] + ev[i-1] * X[i-1, j]
+                C[i, j] = iszero(β) ? α * v : α * v + β * C[i, j]
+            end
+        end
+    end
+    C
+end
+
+function _mul_bidiag_l_right!(C, X, dv, ev, α, β)
+    n = length(dv)
+    n == 0 && return C
+    m_rows = axes(X, 1)
+    if n >= 1
+        @inbounds for j in 1:n-1, i in m_rows
+            v = X[i, j] * dv[j] + X[i, j+1] * ev[j]
+            C[i, j] = iszero(β) ? α * v : α * v + β * C[i, j]
+        end
+        @inbounds for i in m_rows
+            v = X[i, n] * dv[n]
+            C[i, n] = iszero(β) ? α * v : α * v + β * C[i, n]
+        end
+    end
+    C
+end
+
+function _mul_tridiag_left!(C, dl, d, du, X, α, β)
+    n = length(d)
+    n == 0 && return C
+    if n == 1
+        if ndims(X) == 1
+            @inbounds begin
+                v = d[1] * X[1]
+                C[1] = iszero(β) ? α * v : α * v + β * C[1]
+            end
+        else
+            @inbounds for j in axes(X, 2)
+                v = d[1] * X[1, j]
+                C[1, j] = iszero(β) ? α * v : α * v + β * C[1, j]
+            end
+        end
+        return C
+    end
+    if ndims(X) == 1
+        @inbounds begin
+            v = d[1] * X[1] + du[1] * X[2]
+            C[1] = iszero(β) ? α * v : α * v + β * C[1]
+            for i in 2:n-1
+                v = dl[i-1] * X[i-1] + d[i] * X[i] + du[i] * X[i+1]
+                C[i] = iszero(β) ? α * v : α * v + β * C[i]
+            end
+            v = dl[n-1] * X[n-1] + d[n] * X[n]
+            C[n] = iszero(β) ? α * v : α * v + β * C[n]
+        end
+    else
+        @inbounds for j in axes(X, 2)
+            v = d[1] * X[1, j] + du[1] * X[2, j]
+            C[1, j] = iszero(β) ? α * v : α * v + β * C[1, j]
+            for i in 2:n-1
+                v = dl[i-1] * X[i-1, j] + d[i] * X[i, j] + du[i] * X[i+1, j]
+                C[i, j] = iszero(β) ? α * v : α * v + β * C[i, j]
+            end
+            v = dl[n-1] * X[n-1, j] + d[n] * X[n, j]
+            C[n, j] = iszero(β) ? α * v : α * v + β * C[n, j]
+        end
+    end
+    C
+end
+
+function _mul_tridiag_right!(C, X, dl, d, du, α, β)
+    n = length(d)
+    n == 0 && return C
+    m_rows = axes(X, 1)
+    if n == 1
+        @inbounds for i in m_rows
+            v = X[i, 1] * d[1]
+            C[i, 1] = iszero(β) ? α * v : α * v + β * C[i, 1]
+        end
+        return C
+    end
+    @inbounds for i in m_rows
+        v = X[i, 1] * d[1] + X[i, 2] * dl[1]
+        C[i, 1] = iszero(β) ? α * v : α * v + β * C[i, 1]
+    end
+    @inbounds for j in 2:n-1, i in m_rows
+        v = X[i, j-1] * du[j-1] + X[i, j] * d[j] + X[i, j+1] * dl[j]
+        C[i, j] = iszero(β) ? α * v : α * v + β * C[i, j]
+    end
+    @inbounds for i in m_rows
+        v = X[i, n-1] * du[n-1] + X[i, n] * d[n]
+        C[i, n] = iszero(β) ? α * v : α * v + β * C[i, n]
+    end
+    C
+end
+
+function _mul_band!(C, Bd, X, α, β, left)
+    if Bd isa _LA.Bidiagonal
+        if Bd.uplo == 'U'
+            return left ? _mul_bidiag_u_left!(C, Bd.dv, Bd.ev, X, α, β) : _mul_bidiag_u_right!(C, X, Bd.dv, Bd.ev, α, β)
+        else
+            return left ? _mul_bidiag_l_left!(C, Bd.dv, Bd.ev, X, α, β) : _mul_bidiag_l_right!(C, X, Bd.dv, Bd.ev, α, β)
+        end
+    elseif Bd isa _LA.Tridiagonal
+        return left ? _mul_tridiag_left!(C, Bd.dl, Bd.d, Bd.du, X, α, β) : _mul_tridiag_right!(C, X, Bd.dl, Bd.d, Bd.du, α, β)
+    elseif Bd isa _LA.SymTridiagonal
+        return left ? _mul_tridiag_left!(C, Bd.ev, Bd.dv, Bd.ev, X, α, β) : _mul_tridiag_right!(C, X, Bd.ev, Bd.dv, Bd.ev, α, β)
+    end
+    throw(ArgumentError("unsupported band matrix type $(typeof(Bd))"))
 end
 function _mul_banded_compact!(C,A::BandedMatrix,B,α,β)
     if ndims(B)==1
