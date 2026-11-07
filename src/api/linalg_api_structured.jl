@@ -305,16 +305,6 @@ end
 Base.propertynames(F::Cholesky{<:Any,<:Union{BandCholeskyFactor,PackedCholeskyFactor,_LADiag}},private::Bool=false)=
     (:L,:U,:UL,(private ? (:uplo,:info,:engine) : ())...)
 
-# The engines throw PosDefException; check=false keeps a zero engine of the
-# right shape and the failing index, as the dense path does.
-function _chol_compact(f,blank,check::Bool)
-    try
-        return Cholesky(f())
-    catch err
-        (check || !(err isa PosDefException)) && rethrow()
-        return Cholesky(blank(),err.info)
-    end
-end
 function _sym_band(A::_LASymTridiag)
     n=size(A,1); T=_la_eltype(eltype(A)); data=zeros(T,2,n)
     for j in 1:n
@@ -334,16 +324,19 @@ Cholesky factorization in the storage of `A`:
 `A` must be symmetric (real) or Hermitian in its own storage; a general or
 triangular `BandedMatrix`/`PackedMatrix` gets an `ArgumentError`.
 """
-cholesky(A::_LASymTridiag{<:Real};check::Bool=true)=(B=_sym_band(A); n=size(B,1);
-    _chol_compact(()->band_cholesky(B),()->BandCholeskyFactor(zeros(eltype(B),2,n),n,1),check))
+function cholesky(A::_LASymTridiag{<:Real};check::Bool=true)
+    B=_sym_band(A); F,info=_band_cholesky_info(B,check)
+    Cholesky(F,info)
+end
 function cholesky(A::BandedMatrix;check::Bool=true)
-    B=_float_band(A); n=size(B,1); kd=_kd(B)
-    _chol_compact(()->band_cholesky(B),()->BandCholeskyFactor(zeros(eltype(B),kd+1,n),n,kd),check)
+    B=eltype(A)<:Union{GenericFloat,HalfFloat} ? A : _float_band(A)
+    F,info=_band_cholesky_info(B,check)
+    Cholesky(F,info)
 end
 function cholesky(A::PackedMatrix;check::Bool=true)
-    P=_float_packed(A); n=size(P,1)
-    _chol_compact(()->packed_cholesky(P),
-                  ()->PackedCholeskyFactor(PackedMatrix(zeros(eltype(P),length(P.data)),n;uplo=:L,kind=:triangular)),check)
+    P=eltype(A)<:Union{GenericFloat,HalfFloat} ? A : _float_packed(A)
+    F,info=_packed_cholesky_info(P,check)
+    Cholesky(F,info)
 end
 function cholesky(A::_LADiag;check::Bool=true)
     d=_fvec(A.diag); T=eltype(d); l=similar(d)
@@ -597,24 +590,20 @@ engine exists.
 factorize(A::Union{_LADiag,_LABidiag};check::Bool=true)=LU(_tri_engine(A))
 factorize(A::Union{_DenseUpperTri,_DenseLowerTri};check::Bool=true)=LU(_tri_engine(A))
 factorize(A::_LATridiag;check::Bool=true)=lu(A;check)
-function _try_chol(f)
-    try
-        return f()
-    catch err
-        err isa Union{PosDefException,ArgumentError} || rethrow()
-        return nothing
-    end
-end
 function factorize(A::_LASymTridiag;check::Bool=true)
     if eltype(A)<:Real
-        C=_try_chol(()->cholesky(A)); C===nothing || return C
+        C=cholesky(A;check=false)
+        _LA.issuccess(C) && return C
     end
     bunchkaufman(A;check)
 end
 function factorize(A::BandedMatrix;check::Bool=true)
     A.kind===:general && return lu(A;check)
     A.kind===:triangular && return LU(_tri_engine(A))
-    C=_try_chol(()->cholesky(A)); C===nothing || return C
+    if A.kind in (:hermitian,:symmetric) && (eltype(A)<:Real || A.kind===:hermitian)
+        C=cholesky(A;check=false)
+        _LA.issuccess(C) && return C
+    end
     bunchkaufman(A;check)
 end
 function factorize(A::PackedMatrix;check::Bool=true)

@@ -113,14 +113,22 @@ struct BandCholeskyFactor{T}
 end
 @inline _bandchol_get(F,i,j)=0<=i-j<=F.kd ? F.data[1+i-j,j] : zero(eltype(F.data))
 function band_cholesky(A::BandedMatrix{T}) where {T<:GenericFloat}
+    F,_=_band_cholesky_info(A,true)
+    F
+end
+function _band_cholesky_info(A::BandedMatrix{T},check::Bool) where {T<:GenericFloat}
     A.kind in (:hermitian,:symmetric) && (T<:Real || A.kind===:hermitian) || throw(ArgumentError("band Cholesky requires Hermitian storage"))
     n=_square(A); kd=max(A.kl,A.ku); F=BandCholeskyFactor(zeros(T,kd+1,n),n,kd)
-    for j in 1:n
+    @inbounds for j in 1:n
         d=real(A[j,j])
         for k in max(1,j-kd):j-1
             d-=abs2(_bandchol_get(F,j,k))
         end
-        isfinite(d) && d>0 || throw(PosDefException(j))
+        if !(isfinite(d) && d>0)
+            check && throw(PosDefException(j))
+            fill!(F.data,zero(T))
+            return F,j
+        end
         root=sqrt(d); F.data[1,j]=root
         for i in j+1:min(n,j+kd)
             value=A[i,j]
@@ -130,7 +138,7 @@ function band_cholesky(A::BandedMatrix{T}) where {T<:GenericFloat}
             F.data[1+i-j,j]=value/root
         end
     end
-    F
+    F,0
 end
 function solve(F::BandCholeskyFactor{T},b::AbstractVecOrMat{T}) where T
     Base.require_one_based_indexing(b); n=F.n
@@ -155,26 +163,188 @@ end
 struct PackedCholeskyFactor{T}
     L::PackedMatrix{T,Vector{T}}
 end
-"""Native packed Cholesky, retaining only n(n+1)/2 lower entries."""
-function packed_cholesky(A::PackedMatrix{T}) where {T<:GenericFloat}
-    A.kind in (:hermitian,:symmetric) && (T<:Real || A.kind===:hermitian) || throw(ArgumentError("packed Cholesky requires Hermitian storage"))
-    n=size(A,1); L=PackedMatrix(zeros(T,length(A.data)),n;uplo=:L,kind=:triangular)
-    for j in 1:n
-        d=real(A[j,j])
-        for k in 1:j-1
-            d-=abs2(L[j,k])
-        end
-        isfinite(d) && d>0 || throw(PosDefException(j))
-        L[j,j]=sqrt(d)
-        for i in j+1:n
-            s=A[i,j]
-            for k in 1:j-1
-                s-=L[i,k]*conj(L[j,k])
+@inline _pcol_base(n::Int,j::Int)=(j-1)*n-((j-1)*(j-2))>>1
+@inline _cmadd_neg(a,b,c)=muladd(-a,b,c)
+@inline _cmadd_neg(a::Complex{R},b::Complex{R},c::Complex{R}) where {R<:RealFloat}=
+    Complex(muladd(-real(a),real(b),muladd(imag(a),imag(b),real(c))),
+            muladd(-real(a),imag(b),muladd(-imag(a),real(b),imag(c))))
+@inline function _packed_update_col1_panel!(d::Vector{T},n::Int,k0::Int,k1::Int,j::Int) where T
+    @inbounds begin
+        bj=_pcol_base(n,j)+1; len_j=n-j+1; k=k0
+        while k+3<=k1
+            b1=_pcol_base(n,k);   o1=b1+j-k+1; c1=conj(d[o1])
+            b2=_pcol_base(n,k+1); o2=b2+j-k;   c2=conj(d[o2])
+            b3=_pcol_base(n,k+2); o3=b3+j-k-1; c3=conj(d[o3])
+            b4=_pcol_base(n,k+3); o4=b4+j-k-2; c4=conj(d[o4])
+            @simd ivdep for p in 0:(len_j-1)
+                acc=d[bj+p]
+                acc=_cmadd_neg(d[o1+p],c1,acc)
+                acc=_cmadd_neg(d[o2+p],c2,acc)
+                acc=_cmadd_neg(d[o3+p],c3,acc)
+                acc=_cmadd_neg(d[o4+p],c4,acc)
+                d[bj+p]=acc
             end
-            L[i,j]=s/L[j,j]
+            k+=4
+        end
+        while k<=k1
+            bk=_pcol_base(n,k); off_k=bk+(j-k)+1; c=conj(d[off_k])
+            @simd ivdep for p in 0:(len_j-1)
+                d[bj+p]=_cmadd_neg(d[off_k+p],c,d[bj+p])
+            end
+            k+=1
         end
     end
-    PackedCholeskyFactor(L)
+    nothing
+end
+@inline function _packed_update_col2_panel!(d::Vector{T},n::Int,k0::Int,k1::Int,j::Int) where T
+    @inbounds begin
+        bj0=_pcol_base(n,j)+1; bj1=_pcol_base(n,j+1)+1; len1=n-j; k=k0
+        while k+3<=k1
+            b1=_pcol_base(n,k);   o1=b1+j-k+1
+            b2=_pcol_base(n,k+1); o2=b2+j-k
+            b3=_pcol_base(n,k+2); o3=b3+j-k-1
+            b4=_pcol_base(n,k+3); o4=b4+j-k-2
+            c10=conj(d[o1]); c11=conj(d[o1+1])
+            c20=conj(d[o2]); c21=conj(d[o2+1])
+            c30=conj(d[o3]); c31=conj(d[o3+1])
+            c40=conj(d[o4]); c41=conj(d[o4+1])
+            acc0=d[bj0]
+            acc0=_cmadd_neg(d[o1],c10,acc0)
+            acc0=_cmadd_neg(d[o2],c20,acc0)
+            acc0=_cmadd_neg(d[o3],c30,acc0)
+            acc0=_cmadd_neg(d[o4],c40,acc0)
+            d[bj0]=acc0
+            @simd ivdep for p in 1:len1
+                v1=d[o1+p]; v2=d[o2+p]; v3=d[o3+p]; v4=d[o4+p]
+                a0=d[bj0+p]
+                a0=_cmadd_neg(v1,c10,a0)
+                a0=_cmadd_neg(v2,c20,a0)
+                a0=_cmadd_neg(v3,c30,a0)
+                a0=_cmadd_neg(v4,c40,a0)
+                d[bj0+p]=a0
+                a1=d[bj1+p-1]
+                a1=_cmadd_neg(v1,c11,a1)
+                a1=_cmadd_neg(v2,c21,a1)
+                a1=_cmadd_neg(v3,c31,a1)
+                a1=_cmadd_neg(v4,c41,a1)
+                d[bj1+p-1]=a1
+            end
+            k+=4
+        end
+        while k<=k1
+            bk=_pcol_base(n,k); off=bk+(j-k)+1
+            c0=conj(d[off]); c1=conj(d[off+1])
+            d[bj0]=_cmadd_neg(d[off],c0,d[bj0])
+            @simd ivdep for p in 1:len1
+                v=d[off+p]
+                d[bj0+p]=_cmadd_neg(v,c0,d[bj0+p])
+                d[bj1+p-1]=_cmadd_neg(v,c1,d[bj1+p-1])
+            end
+            k+=1
+        end
+    end
+    nothing
+end
+function _packed_panel_threaded!(d::Vector{T},n::Int,k0::Int,k1::Int,workers::Int) where T
+    npairs=(n-k1)>>1
+    @sync for w in 1:workers
+        Threads.@spawn begin
+            for pair in w:workers:npairs
+                j=k1+2*pair-1
+                _packed_update_col2_panel!(d,n,k0,k1,j)
+            end
+            if w==1 && isodd(n-k1)
+                _packed_update_col1_panel!(d,n,k0,k1,n)
+            end
+        end
+    end
+    nothing
+end
+function _packed_chol_kernel!(d::Vector{T},n::Int,threaded::Bool,check::Bool) where T
+    R=real(T); nb=T<:Complex ? 32 : 64; k0=1
+    while k0<=n
+        k1=min(n,k0+nb-1)
+        @inbounds for k in k0:k1
+            _packed_update_col1_panel!(d,n,k0,k-1,k)
+            bk=_pcol_base(n,k)
+            diag_val=real(d[bk+1])
+            if !(isfinite(diag_val) && diag_val>zero(R))
+                check && throw(PosDefException(k))
+                return k
+            end
+            root=sqrt(diag_val)
+            d[bk+1]=root
+            inv_root=Base.inv(root)
+            len=n-k
+            @simd ivdep for p in 1:len
+                d[bk+1+p]*=inv_root
+            end
+        end
+        rem=n-k1
+        if rem>0
+            work=Float64(rem)*Float64(rem+1)*0.5*Float64(k1-k0+1)
+            workers=threaded && rem>=256 && work>=1_500_000.0 ? min(Threads.nthreads(),rem>>5) : 1
+            if workers<=1
+                j=k1+1
+                while j+1<=n
+                    _packed_update_col2_panel!(d,n,k0,k1,j)
+                    j+=2
+                end
+                j<=n && _packed_update_col1_panel!(d,n,k0,k1,j)
+            else
+                _packed_panel_threaded!(d,n,k0,k1,workers)
+            end
+        end
+        k0=k1+1
+    end
+    0
+end
+"""Native packed Cholesky, retaining only n(n+1)/2 lower entries."""
+function packed_cholesky(A::PackedMatrix{T};threaded::Bool=true) where {T<:GenericFloat}
+    F,_=_packed_cholesky_info(A,true;threaded)
+    F
+end
+function _packed_cholesky_info(A::PackedMatrix{T},check::Bool;threaded::Bool=true) where {T<:GenericFloat}
+    A.kind in (:hermitian,:symmetric) && (T<:Real || A.kind===:hermitian) || throw(ArgumentError("packed Cholesky requires Hermitian storage"))
+    threaded=threaded && generic_threadsafe(T)
+    n=size(A,1); d=Vector{T}(undef,length(A.data))
+    L=PackedMatrix(d,n;uplo=:L,kind=:triangular)
+    upper=A.upper; herm=A.kind===:hermitian; adata=A.data
+    if upper
+        idx=1
+        @inbounds for j in 1:n
+            diag_v=real(adata[(j*(j+1))>>1])
+            if !check && !(isfinite(diag_v) && diag_v>0)
+                fill!(d,zero(T))
+                return PackedCholeskyFactor(L),j
+            end
+            d[idx]=diag_v; idx+=1
+            if herm
+                for i in (j+1):n
+                    d[idx]=conj(adata[((i*(i-1))>>1)+j]); idx+=1
+                end
+            else
+                for i in (j+1):n
+                    d[idx]=adata[((i*(i-1))>>1)+j]; idx+=1
+                end
+            end
+        end
+    else
+        if !check
+            @inbounds for j in 1:n
+                bk=_pcol_base(n,j)
+                diag_v=real(adata[bk+1])
+                if !(isfinite(diag_v) && diag_v>0)
+                    fill!(d,zero(T))
+                    return PackedCholeskyFactor(L),j
+                end
+            end
+        end
+        copyto!(d,adata)
+    end
+    info=_packed_chol_kernel!(d,n,threaded,check)
+    info!=0 && fill!(d,zero(T))
+    PackedCholeskyFactor(L),info
 end
 function solve(F::PackedCholeskyFactor{T},b::AbstractVecOrMat{T}) where T
     n=size(F.L,1); Base.require_one_based_indexing(b)

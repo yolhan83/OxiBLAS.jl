@@ -192,6 +192,10 @@ end
 
 """Blocked LLᴴ Cholesky using the lower triangle; GEMM updates native panels."""
 function cholesky_factor(A::AbstractMatrix{T};blocksize=nothing,threaded=true) where {T<:GenericFloat}
+    F,_=_cholesky_factor_info(A;blocksize,threaded,check=true)
+    F
+end
+function _cholesky_factor_info(A::AbstractMatrix{T};blocksize=nothing,threaded=true,check::Bool=true) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     n=_square(A)
     # Leaf size of the recursion: 64 for real types (64x64 Float64: 1.6 ->
@@ -201,56 +205,74 @@ function cholesky_factor(A::AbstractMatrix{T};blocksize=nothing,threaded=true) w
     # Only the documented lower input triangle is defined/required. This also
     # permits reference-backed scalars with uninitialized upper entries/views.
     L=Matrix{T}(undef,n,n)
-    for j in 1:n,i in j:n
-        L[i,j]=A[i,j]
+    @inbounds for j in 1:n
+        if !check
+            d=real(A[j,j])
+            if !(isfinite(d) && d>0)
+                isbitstype(T) || fill!(L,zero(T))
+                return CholeskyFactor(L),j
+            end
+        end
+        for i in j:n
+            L[i,j]=A[i,j]
+        end
     end
-    _cholesky_factor!(L;blocksize,threaded)
+    _cholesky_factor_info!(L;blocksize,threaded,check)
 end
 """In-place Cholesky of the lower triangle of L (a Matrix or a strided view):
 L is overwritten by the factor, its strict upper triangle zeroed, and is the
 stored `L`. The engine of cholesky_factor, which hands it a copy."""
 function _cholesky_factor!(L::AbstractMatrix{T};blocksize=nothing,threaded=true) where {T<:GenericFloat}
+    F,_=_cholesky_factor_info!(L;blocksize,threaded,check=true)
+    F
+end
+function _cholesky_factor_info!(L::AbstractMatrix{T};blocksize=nothing,threaded=true,check::Bool=true) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     n=_square(L); Base.require_one_based_indexing(L)
     blocksize=something(blocksize,T<:Complex ? 32 : 64)
     blocksize>0 || throw(ArgumentError("blocksize must be positive"))
-    _cholesky_recursive!(L,1,blocksize,threaded)
-    @inbounds for j in 1:n, i in 1:j-1
-        L[i,j]=zero(T)
+    info=_cholesky_recursive!(L,1,blocksize,threaded,check)
+    if info==0 || !isbitstype(T)
+        @inbounds for j in 1:n, i in 1:j-1
+            L[i,j]=zero(T)
+        end
     end
-    CholeskyFactor(L)
+    CholeskyFactor(L),info
 end
 # Recursive LL' (LAPACK potrf2): L11, then L21=A21*L11^-H (TRSM) and
 # A22-=L21*L21' (HERK) before L22, so the large updates run in this
 # package's TRSM/HERK. Blocks of up to `leaf` columns are factored right
 # looking with contiguous column updates (the former 32-column blocks read
 # rows of L in their inner products). `offset` is the global index of row 1.
-function _cholesky_recursive!(L,offset,leaf,threaded)
+function _cholesky_recursive!(L,offset,leaf,threaded,check::Bool=true)
     n=size(L,1); T=eltype(L)
     if n<=leaf
         @inbounds for col in 1:n
             d=real(L[col,col])
-            isfinite(d) && d>0 || throw(PosDefException(offset+col-1))
+            if !(isfinite(d) && d>0)
+                check && throw(PosDefException(offset+col-1))
+                return offset+col-1
+            end
             d=sqrt(d); L[col,col]=d
             for i in col+1:n
                 L[i,col]/=d
             end
             for j in col+1:n
                 c=conj(L[j,col])
-                @simd for i in j:n
+                @simd ivdep for i in j:n
                     L[i,j]=muladd(-L[i,col],c,L[i,j])
                 end
             end
         end
-        return L
+        return 0
     end
     h=n÷2
-    _cholesky_recursive!(view(L,1:h,1:h),offset,leaf,threaded)
+    info=_cholesky_recursive!(view(L,1:h,1:h),offset,leaf,threaded,check)
+    info==0 || return info
     panel=view(L,h+1:n,1:h)
     trsm!(panel,view(L,1:h,1:h);side=:R,uplo=:L,trans=:C,threaded)
     herk!(view(L,h+1:n,h+1:n),panel,-one(real(T)),one(real(T));uplo=:L,threaded)
-    _cholesky_recursive!(view(L,h+1:n,h+1:n),offset+h,leaf,threaded)
-    L
+    _cholesky_recursive!(view(L,h+1:n,h+1:n),offset+h,leaf,threaded,check)
 end
 
 function solve(F::CholeskyFactor,b::AbstractVecOrMat)

@@ -17,20 +17,20 @@ csv = "results/20261107_100019.csv"
 # Factorizations (LU, Cholesky, QR, LQ, SVD, ...)
 [[campaigns]]
 threads = 1
-csv = "results/20261106_220602.csv"
+csv = "results/20261107_140625.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_101726.csv"
+csv = "results/20261107_134835.csv"
 
 # Solves (\, ldiv, ldiv!)
 [[campaigns]]
 threads = 1
-csv = "results/20261106_222555.csv"
+csv = "results/20261107_144228.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_111501.csv"
+csv = "results/20261107_142444.csv"
 
 # Spectral (SVD, Eigen, Schur, Hessenberg)
 [[campaigns]]

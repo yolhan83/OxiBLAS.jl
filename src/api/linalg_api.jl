@@ -290,20 +290,12 @@ function cholesky(A::_DenseIn,::_LA.NoPivot=_LA.NoPivot();check::Bool=true)
         check && throw(PosDefException(-1))
         return Cholesky(CholeskyFactor(Matrix{T}(A)),-1)
     end
-    try
-        return Cholesky(cholesky_factor(X))
-    catch err
-        (check || !(err isa PosDefException)) && rethrow()
-        return Cholesky(CholeskyFactor(Matrix{T}(A)),err.info)
-    end
+    F,info=_cholesky_factor_info(X;check)
+    Cholesky(F,info)
 end
 function _chol_inplace!(A::StridedMatrix,check::Bool)
-    try
-        return Cholesky(_cholesky_factor!(A))
-    catch err
-        (check || !(err isa PosDefException)) && rethrow()
-        return Cholesky(CholeskyFactor(A),err.info)
-    end
+    F,info=_cholesky_factor_info!(A;check)
+    Cholesky(F,info)
 end
 function cholesky!(A::StridedMatrix{<:GenericFloat},::_LA.NoPivot=_LA.NoPivot();check::Bool=true)
     _LA.checksquare(A)
@@ -376,21 +368,27 @@ function _LA.ldiv!(F::_LDLTypes,B::AbstractVecOrMat)
     _apply_split!(X->_ldl_solve!(E,X),eltype(F),B)
 end
 function _LA.logabsdet(F::Union{BunchKaufman{T,<:LDLFactor},LDLt{T,<:LDLFactor}}) where T
-    E=_eng(F); D=E.D; d=zero(real(T)); s=one(T); k=1
+    E=_eng(F); d_vec=getfield(E,:d); dl_vec=getfield(E,:dl); herm=getfield(E,:hermitian)
+    d=zero(real(T)); s=one(T); k=1
     for step in E.blocks
-        δ=step==1 ? D[k,k] : D[k,k]*D[k+1,k+1]-D[k+1,k]*D[k,k+1]
+        if step==1
+            δ=d_vec[k]
+        else
+            b=dl_vec[k]; bh=herm ? conj(b) : b
+            δ=d_vec[k]*d_vec[k+1]-b*bh
+        end
         d+=log(abs(δ)); s*=sign(δ); k+=step
     end
     (d,s)
 end
-_ldl_tridiagonal(D::AbstractMatrix)=_LA.Tridiagonal([D[i+1,i] for i in 1:size(D,1)-1],
-                                                    [D[i,i] for i in 1:size(D,1)],
-                                                    [D[i,i+1] for i in 1:size(D,1)-1])
 function Base.getproperty(F::Union{BunchKaufman{T,<:LDLFactor},LDLt{T,<:LDLFactor}},s::Symbol) where T
     E=_eng(F)
     s===:L && return _LA.UnitLowerTriangular(E.L)
     s===:U && return E.hermitian ? _LA.UnitUpperTriangular(adjoint(E.L)) : _LA.UnitUpperTriangular(transpose(E.L))
-    s===:D && return F isa LDLt ? _LA.Diagonal([E.D[i,i] for i in axes(E.D,1)]) : _ldl_tridiagonal(E.D)
+    if s===:D
+        d_vec=getfield(E,:d); dl_vec=getfield(E,:dl)
+        return F isa LDLt ? _LA.Diagonal(copy(d_vec)) : _LA.Tridiagonal(copy(dl_vec),copy(d_vec),E.hermitian ? conj.(dl_vec) : copy(dl_vec))
+    end
     s===:p && return E.p
     s===:P && return _permmatrix(T,E.p)
     s===:uplo && return 'L'
@@ -1071,12 +1069,21 @@ Triangular and diagonal structures are not detected. Unlike
 `LinearAlgebra.factorize`, the result is never a LinearAlgebra wrapper,
 whose solves would go through BLAS.
 """
+function _has_pos_real_diag(A::AbstractMatrix)
+    @inbounds for i in axes(A,1)
+        d=A[i,i]
+        (isreal(d) && isfinite(real(d)) && real(d)>0) || return false
+    end
+    true
+end
 function factorize(A::_DenseIn)
     m,n=size(A)
     m==n || return qr(A,_LA.ColumnNorm())
     if _isherm_input(A)
-        C=cholesky(A;check=false)
-        _LA.issuccess(C) && return C
+        if _has_pos_real_diag(A)
+            C=cholesky(A;check=false)
+            _LA.issuccess(C) && return C
+        end
         return bunchkaufman(A isa _DenseHS ? A : _LA.Hermitian(A isa StridedMatrix ? A : _dense_input(A),:L))
     end
     lu(A)
@@ -1143,7 +1150,7 @@ end
 Whether `A` is Hermitian positive definite, decided by an attempted Cholesky
 factorization.
 """
-isposdef(A::_DenseIn)=size(A,1)==size(A,2) && _LA.issuccess(cholesky(A;check=false))
+isposdef(A::_DenseIn)=size(A,1)==size(A,2) && _isherm_input(A) && _has_pos_real_diag(A) && _LA.issuccess(cholesky(A;check=false))
 
 # ==== ordschur, norms, kron, extreme eigenvalues ================================
 # LinearAlgebra selects by position (in the order of F.values); schur_reorder

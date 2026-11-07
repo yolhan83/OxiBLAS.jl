@@ -11,6 +11,7 @@ _half_matrix(A)=_half_work(eltype(A)).(A)
 # every public entry and native target is inspectable before execution.
 lu_factor(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=lu_factor(_half_matrix(A);kwargs...)
 cholesky_factor(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=cholesky_factor(_half_matrix(A);kwargs...)
+_cholesky_factor_info(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=_cholesky_factor_info(_half_matrix(A);kwargs...)
 qr_factor(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=qr_factor(_half_matrix(A);kwargs...)
 qr_pivoted(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=qr_pivoted(_half_matrix(A);kwargs...)
 ldlt_factor(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=ldlt_factor(_half_matrix(A);kwargs...)
@@ -80,7 +81,9 @@ function _half_storage(P::PackedMatrix{T}) where {T<:HalfFloat}
 end
 band_lu(A::BandedMatrix{T}) where {T<:HalfFloat}=band_lu(_half_storage(A))
 band_cholesky(A::BandedMatrix{T}) where {T<:HalfFloat}=band_cholesky(_half_storage(A))
-packed_cholesky(A::PackedMatrix{T}) where {T<:HalfFloat}=packed_cholesky(_half_storage(A))
+_band_cholesky_info(A::BandedMatrix{T},check::Bool) where {T<:HalfFloat}=_band_cholesky_info(_half_storage(A),check)
+packed_cholesky(A::PackedMatrix{T};kwargs...) where {T<:HalfFloat}=packed_cholesky(_half_storage(A);kwargs...)
+_packed_cholesky_info(A::PackedMatrix{T},check::Bool;kwargs...) where {T<:HalfFloat}=_packed_cholesky_info(_half_storage(A),check;kwargs...)
 aasen_factor(A::AbstractMatrix{T};kwargs...) where {T<:HalfFloat}=aasen_factor(_half_matrix(A);kwargs...)
 solve(F::BandLUFactor{T},b::AbstractVecOrMat{S};kwargs...) where {T<:NativeFloat,S<:HalfFloat}=solve(F,T.(b);kwargs...)
 solve(F::BandCholeskyFactor{T},b::AbstractVecOrMat{S}) where {T<:NativeFloat,S<:HalfFloat}=solve(F,T.(b))
