@@ -1260,7 +1260,9 @@ Kronecker product (`kron_product`), with the element types promoted.
 """
 function kron(A::_DenseIn,B::_DenseIn)
     S=promote_type(_la_eltype(eltype(A)),_la_eltype(eltype(B)))
-    kron_product(Matrix{S}(A),Matrix{S}(B))
+    Amat=(eltype(A)===S && A isa Matrix) ? A : Matrix{S}(A)
+    Bmat=(eltype(B)===S && B isa Matrix) ? B : Matrix{S}(B)
+    kron_product(Amat,Bmat)
 end
 """
     OxiBLAS.eigmax(A), OxiBLAS.eigmin(A)

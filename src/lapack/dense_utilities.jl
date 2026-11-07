@@ -225,18 +225,69 @@ end
 
 function kron_product(A::AbstractMatrix{T},B::AbstractMatrix{T}) where {T<:GenericFloat}
     Base.require_one_based_indexing(A,B); m,n=size(A); p,q=size(B)
-    C=Matrix{T}(undef,Base.checked_mul(m,p),Base.checked_mul(n,q))
-    for j in 1:n, l in 1:q, i in 1:m, k in 1:p
-        C[(i-1)*p+k,(j-1)*q+l]=A[i,j]*B[k,l]
+    mp=Base.checked_mul(m,p); nq=Base.checked_mul(n,q)
+    C=Matrix{T}(undef,mp,nq)
+    tot=mp*nq
+    if tot >= 1_000_000 && Threads.nthreads() > 1 && !(T <: BigFloat)
+        Threads.@threads for j in 1:n
+            for l in 1:q
+                col=(j-1)*q+l
+                col_idx=(col-1)*mp+1
+                B_col_offset=(l-1)*p
+                @inbounds for i in 1:m
+                    Aij=A[i,j]
+                    @simd for k in 1:p
+                        C[col_idx+k-1]=Aij*B[B_col_offset+k]
+                    end
+                    col_idx+=p
+                end
+            end
+        end
+    else
+        idx=1
+        @inbounds for j in 1:n, l in 1:q
+            B_col_offset=(l-1)*p
+            for i in 1:m
+                Aij=A[i,j]
+                @simd for k in 1:p
+                    C[idx+k-1]=Aij*B[B_col_offset+k]
+                end
+                idx+=p
+            end
+        end
     end
     C
 end
 function khatri_rao(A::AbstractMatrix{T},B::AbstractMatrix{T}) where {T<:GenericFloat}
     Base.require_one_based_indexing(A,B)
-    size(A,2)==size(B,2) || throw(DimensionMismatch("Khatri-Rao column counts differ"))
-    C=Matrix{T}(undef,Base.checked_mul(size(A,1),size(B,1)),size(A,2))
-    for j in axes(A,2), i in axes(A,1), k in axes(B,1)
-        C[(i-1)*size(B,1)+k,j]=A[i,j]*B[k,j]
+    n=size(A,2); size(B,2)==n || throw(DimensionMismatch("Khatri-Rao column counts differ"))
+    m=size(A,1); p=size(B,1)
+    mp=Base.checked_mul(m,p)
+    C=Matrix{T}(undef,mp,n)
+    if mp*n >= 65_536 && Threads.nthreads() > 1 && !(T <: BigFloat)
+        Threads.@threads for j in 1:n
+            col_idx=(j-1)*mp+1
+            B_col_offset=(j-1)*p
+            @inbounds for i in 1:m
+                Aij=A[i,j]
+                @simd for k in 1:p
+                    C[col_idx+k-1]=Aij*B[B_col_offset+k]
+                end
+                col_idx+=p
+            end
+        end
+    else
+        idx=1
+        @inbounds for j in 1:n
+            B_col_offset=(j-1)*p
+            for i in 1:m
+                Aij=A[i,j]
+                @simd for k in 1:p
+                    C[idx+k-1]=Aij*B[B_col_offset+k]
+                end
+                idx+=p
+            end
+        end
     end
     C
 end
