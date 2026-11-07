@@ -149,7 +149,8 @@ function run_case(c::Case,timing::Bool)
     note=""; xr=nothing; ref=ref0
     if ref===nothing
         note=no_suitesparse(c) ? "no reference: SuiteSparse has no $(eltype_label(c.T))" :
-             no_lapack_sylvester(c) ? "no reference: LinearAlgebra.$(c.op.name) requires LAPACK trsyl!" : "no reference"
+             no_lapack_sylvester(c) ? "no reference: LinearAlgebra.$(c.op.name) requires LAPACK trsyl!" :
+             (c.op.name == "norm" && c.kind === :tridiagonal) ? "no reference: LinearAlgebra has no specialized norm for Tridiagonal" : "no reference"
     else
         try
             xr=ref()

@@ -43,6 +43,39 @@ OXIBLAS_BENCH_SECONDS=2 julia --project=benchmark benchmark/run.jl lu        # l
 
 The CI never runs benchmarks: GitHub runner timings are not stable enough.
 
+## Publishing benchmark results: `publish_results.jl`
+
+The interactive documentation dashboard (`docs/src/guide/performance.md`) displays consolidated benchmark snapshots loaded from `docs/src/assets/benchmarks/results.json`.
+
+To publish or update benchmark results in the documentation:
+
+1. Configure the desired campaign runs in `benchmark/publication.toml`:
+   ```toml
+   [snapshot]
+   title = "Apple Silicon Benchmarks (Apple M4 Max)"
+   revision = "5ad0aa6"
+
+   [[campaigns]]
+   threads = 1
+   csv = "results/20261106_example_1t.csv"
+
+   [[campaigns]]
+   threads = 17
+   csv = "results/20261106_example_17t.csv"
+   ```
+
+2. Run the standalone publication tool:
+   ```sh
+   julia --project=benchmark benchmark/publish_results.jl
+   ```
+
+   This command validates schema completeness, checks markdown metadata compatibility, verifies thread counts, aggregates statistics, and writes the validated JSON snapshot. It does not run benchmarks or rebuild documentation.
+
+3. Run unit tests on the publisher with synthetic fixtures:
+   ```sh
+   julia --project=benchmark benchmark/test_publisher.jl
+   ```
+
 ## Archived campaigns: `archive/`
 
 Kernel micro-benchmarks and full campaigns (BLAS 1/2/3, LAPACK, dense SVD,

@@ -112,6 +112,7 @@ makedocs(;
     modules=[OxiBLAS],
     authors="OxiBLAS.jl contributors",
     format=Documenter.HTML(;prettyurls=get(ENV,"CI","false")=="true",edit_link=nothing,
+                            assets=["assets/performance.css", "assets/performance.js"],
                             size_threshold=nothing,size_threshold_warn=1024^2,search_size_threshold_warn=1024^2,collapselevel=1),
     pages=[
         "Home"=>"index.md",

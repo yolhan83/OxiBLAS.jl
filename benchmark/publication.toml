@@ -1,0 +1,60 @@
+# Publication configuration for OxiBLAS interactive benchmark dashboard
+# Maps completed benchmark campaigns into the published documentation dataset.
+
+[snapshot]
+title = "Apple Silicon Benchmarks (Apple M4 Max)"
+revision = "5ad0aa6"
+
+# Products & BLAS 3
+[[campaigns]]
+threads = 1
+csv = "results/20261106_201357.csv"
+
+[[campaigns]]
+threads = 17
+csv = "results/20261106_203127.csv"
+
+# Factorizations (LU, Cholesky, QR, LQ, SVD, ...)
+[[campaigns]]
+threads = 1
+csv = "results/20261106_220602.csv"
+
+[[campaigns]]
+threads = 17
+csv = "results/20261106_214429.csv"
+
+# Solves (\, ldiv, ldiv!)
+[[campaigns]]
+threads = 1
+csv = "results/20261106_222555.csv"
+
+[[campaigns]]
+threads = 17
+csv = "results/20261106_234509.csv"
+
+# Spectral (SVD, Eigen, Schur, Hessenberg)
+[[campaigns]]
+threads = 1
+csv = "results/20261107_001929.csv"
+
+[[campaigns]]
+threads = 17
+csv = "results/20261107_003546.csv"
+
+# Tensors (einsum, einsum!)
+[[campaigns]]
+threads = 1
+csv = "results/20261107_005232.csv"
+
+[[campaigns]]
+threads = 17
+csv = "results/20261107_005419.csv"
+
+# Functions (det, inv, norm, opnorm, tr, exp, etc.)
+[[campaigns]]
+threads = 1
+csv = "results/20261107_005651.csv"
+
+[[campaigns]]
+threads = 17
+csv = "results/20261107_014813.csv"

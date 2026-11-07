@@ -32,7 +32,8 @@ end
 close_to(x,y,T,N)=isequal(x,y) || relerr(x,y)<=rtol(T,N)
 # Frobenius norm without O(n²) generic iteration over structured wrappers.
 fnorm(R::Union{LA.Hermitian,LA.Symmetric})=parent(R) isa SparseMatrixCSC ? 2LA.norm(parent(R)) : LA.norm(R)
-fnorm(R::Union{LA.Diagonal,LA.Bidiagonal,LA.Tridiagonal,LA.SymTridiagonal})=LA.norm(sparse(R))
+fnorm(R::LA.Diagonal)=LA.norm(R.diag)
+fnorm(R::Union{LA.Bidiagonal,LA.Tridiagonal,LA.SymTridiagonal})=LA.norm(sparse(R))
 fnorm(R::Union{LA.UpperTriangular,LA.LowerTriangular})=LA.norm(parent(R))
 fnorm(R)=LA.norm(R)
 # Square: normwise backward error of the residual. Tall: least-squares
@@ -89,7 +90,9 @@ cholesky_refactor(A,R,T,N,r)=(b=rhs(r,T,R); Fo=O.cholesky(A); Fr=try LA.cholesky
 ldiv_alloc(k)=(A,R,T,N,r)->(b=rhs(r,T,R,k); (()->O.ldiv(A,b), ()->R\b, (xo,xr)->solves(R,xo,b,T,N)))
 backslash(A,R,T,N,r)=(b=rhs(r,T,R); (()->A\b, ()->R\b, (xo,xr)->solves(R,xo,b,T,N)))
 function ldiv_inplace(A,R,T,N,r)
-    b=rhs(r,T,R); Fo=O.factorize(A); Fr=try LA.factorize(R) catch; nothing end
+    b=rhs(r,T,R); Fo=O.factorize(A)
+    skip_ref = (R isa AbstractSparseMatrix || R isa LA.Hermitian{<:Any,<:AbstractSparseMatrix} || R isa BandedMatrix) && !(T in (Float64, ComplexF64))
+    Fr = skip_ref ? nothing : (try LA.factorize(R) catch; nothing end)
     y=zeros(T,size(R,2)); z=similar(y)
     (()->O.ldiv!(y,Fo,b), Fr===nothing ? nothing : ()->LA.ldiv!(z,Fr,b), (xo,xr)->solves(R,xo,b,T,N))
 end
@@ -116,6 +119,14 @@ schur_pencil(A,R,T,N,r)=(B=pencil_B(R,T,r); (()->O.schur(A,B), ()->LA.schur(R,B)
 
 # ---- functions of a matrix ------------------------------------------------
 scalar_case(f,g)=(A,R,T,N,r)->(()->f(A), ()->g(R), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,N),xr))
+function norm_case(A,R,T,N,r)
+    if R isa LA.Tridiagonal
+        # LinearAlgebra has no specialized norm for Tridiagonal (falls back to generic O(n²)).
+        # Validate mathematical accuracy via sparse(R), but do not time a surrogate reference.
+        return (()->O.norm(A), nothing, (xo,_)->close_to(xo, LA.norm(sparse(R)), T, N))
+    end
+    scalar_case(O.norm, LA.norm)(A, R, T, N, r)
+end
 scale_mat(A::LA.Hermitian,c)=LA.Hermitian(scale_mat(parent(A),c),Symbol(A.uplo))
 scale_mat(A::LA.UpperTriangular,c)=LA.UpperTriangular(parent(A)*c)
 scale_mat(A::LA.Diagonal,c)=LA.Diagonal(A.diag.*c)
@@ -138,8 +149,10 @@ function det_case(A,R,T,N,r)
 end
 logabsdet_case(A,R,T,N,r)=(()->O.logabsdet(A), ()->ref_logabsdet(R),
     (xo,xr)->ref_or_missing(y->abs(xo[1]-y[1])<=rtol(T,N)*max(1,abs(y[1])) && isapprox(xo[2],y[2];rtol=0.01),xr))
-inv_case(A,R,T,N,r)=(()->O.inv(A), ()->LA.inv(R),
-    (X,_)->LA.norm(R*X-LA.I)<=rtol(T,N)*fnorm(R)*fnorm(X))
+function inv_case(A,R,T,N,r)
+    (A isa LA.Bidiagonal || A isa LA.Tridiagonal) && N > 2048 && throw(ArgumentError("refuse to allocate dense inverse for size $N"))
+    ((()->O.inv(A), ()->LA.inv(R), (X,_)->fnorm(R*X-LA.I)<=rtol(T,N)*fnorm(R)*fnorm(X)))
+end
 matfun(f,g)=(A,R,T,N,r)->(()->f(A), ()->g(R), (xo,xr)->ref_or_missing(y->close_to(xo,y,T,N),xr))
 sqrt_case(A,R,T,N,r)=(M=Matrix(R); (()->O.sqrt(A), ()->sqrt(R), (X,_)->relerr(Matrix(X)*Matrix(X),M)<=rtol(T,N)))
 rank_case(A,R,T,N,r)=(()->O.rank(A), ()->LA.rank(R), (xo,xr)->ref_or_missing(y->xo==y,xr))
@@ -212,7 +225,7 @@ const OPS=[
     Op("det","functions","allocating",O.det,DET_KINDS,:cubic,det_case),
     Op("logabsdet","functions","allocating",O.logabsdet,DET_KINDS,:cubic,logabsdet_case),
     Op("inv","functions","allocating",O.inv,[:dense,:hermitian,:upper,:lower,:diagonal,:bidiagonal,:tridiagonal],:cubic,inv_case),
-    Op("norm","functions","allocating",O.norm,[:dense,:hermitian,:tridiagonal,:sparse,:csr],:cubic,scalar_case(O.norm,LA.norm)),
+    Op("norm","functions","allocating",O.norm,[:dense,:hermitian,:tridiagonal,:sparse,:csr],:cubic,norm_case),
     Op("opnorm1","functions","allocating",O.opnorm,[:dense,:hermitian,:tridiagonal,:sparse,:csr],:cubic,scalar_case(A->O.opnorm(A,1),R->LA.opnorm(R,1))),
     Op("opnorm2","functions","allocating",O.opnorm,[:dense],:spectral,scalar_case(O.opnorm,LA.opnorm)),
     Op("cond","functions","allocating",O.cond,[:dense],:spectral,scalar_case(O.cond,LA.cond)),
