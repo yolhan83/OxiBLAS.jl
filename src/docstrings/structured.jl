@@ -138,6 +138,17 @@ storage (`n(n+1)/2` entries). Solve with [`solve`](@ref).
 """ PackedCholeskyFactor
 
 @doc raw"""
+    packed_cholesky(A::PackedMatrix; threaded=true) -> PackedCholeskyFactor
+
+Native Cholesky factorization `A = L·Lᴴ` of a Hermitian or real symmetric matrix in packed
+storage (`n(n+1)/2` elements in column order). The lower Cholesky factor `L` is returned
+in packed triangular storage with no dense expansion.
+
+Uses cache-blocked panels and parallel multi-column rank-k updates (`threaded=true`).
+Solve with [`solve`](@ref).
+""" packed_cholesky
+
+@doc raw"""
     AasenFactor{T}
 
 Result of [`aasen_factor`](@ref): symmetric indefinite factorization

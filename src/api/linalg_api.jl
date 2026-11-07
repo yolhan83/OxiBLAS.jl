@@ -744,12 +744,24 @@ Base.iterate(F::SVD,state=1)=state==1 ? (F.U,2) : state==2 ? (F.S,3) : state==3 
 
 """
     OxiBLAS.svd(A; full=false) -> OxiBLAS.SVD
+    OxiBLAS.svd!(A; full=false) -> OxiBLAS.SVD
 
 Singular value decomposition (`svd_factor`). `svd!` does not overwrite `A`.
+On structured matrices (`Bidiagonal`, `Diagonal`), applies specialized algorithms
+without full dense conversion.
 """
 svd(A::_DenseIn;full::Bool=false)=SVD(svd_factor(_dense_input(A);full))
+@doc (@doc svd) svd!
 svd!(A::StridedMatrix;full::Bool=false)=svd(A;full)
+"""
+    OxiBLAS.svdvals(A)
+    OxiBLAS.svdvals!(A)
+
+Singular values of `A` in descending order (`singular_values`). On structured matrices
+(`Bidiagonal`, `Diagonal`), uses specialized routines without forming dense matrices.
+"""
 svdvals(A::_DenseIn)=singular_values(_dense_input(A))
+@doc (@doc svdvals) svdvals!
 svdvals!(A::StridedMatrix)=svdvals(A)
 svdvals(F::SVD)=F.S
 
@@ -815,6 +827,13 @@ function eigen(A::_DenseIn;permute::Bool=true,scale::Bool=true,sortby::Union{Fun
     λ,V=_eig_sorted(E.values,E.vectors,sortby); Eigen(λ,V)
 end
 eigen!(A::Union{StridedMatrix,_DenseHS};kw...)=eigen(A;kw...)
+"""
+    OxiBLAS.eigvals(A; permute=true, scale=true, sortby=...)
+    OxiBLAS.eigvals(A, B)
+
+Eigenvalues of `A` (or generalized eigenvalues of the pencil `A - λ·B`).
+Dispatches to structured routines (`SymTridiagonal`, `Diagonal`, `Hermitian`) when applicable.
+"""
 function eigvals(A::_DenseIn;permute::Bool=true,scale::Bool=true,sortby::Union{Function,Nothing}=_eigsortby)
     _LA.checksquare(A)
     _isherm_input(A) && return _eigen_herm(A;vectors=false).values
@@ -1010,15 +1029,18 @@ QZ (`qz_factor`). `schur!` does not overwrite its arguments.
 schur(A::_DenseIn)=Schur(schur_factor(_dense_input(A)))
 schur(A::_DenseIn,B::_DenseIn)=(X=_dense_input(A);Y=_dense_input(B);
     S=promote_type(eltype(X),eltype(Y)); GeneralizedSchur(qz_factor(Matrix{S}(X),Matrix{S}(Y))))
+@doc (@doc schur) schur!
 schur!(A::StridedMatrix)=schur(A)
 schur!(A::StridedMatrix,B::StridedMatrix)=schur(A,B)
 """
     OxiBLAS.hessenberg(A) -> OxiBLAS.Hessenberg
+    OxiBLAS.hessenberg!(A) -> OxiBLAS.Hessenberg
 
 Hessenberg reduction (`hessenberg_factor`). `hessenberg!` does not overwrite
 `A`.
 """
 hessenberg(A::_DenseIn)=Hessenberg(hessenberg_factor(_dense_input(A)))
+@doc (@doc hessenberg) hessenberg!
 hessenberg!(A::StridedMatrix)=hessenberg(A)
 
 # ==== solves shared by the square factorizations ================================
@@ -1091,14 +1113,21 @@ end
 factorize(F::_OxiFact)=F
 
 """
-    OxiBLAS.det(A), OxiBLAS.logdet(A), OxiBLAS.logabsdet(A)
+    OxiBLAS.det(A)
+    OxiBLAS.logdet(A)
+    OxiBLAS.logabsdet(A)
 
-Determinant functions computed from an LU factorization. On an OxiBLAS
-factorization, they forward to LinearAlgebra's generic methods, which use
-the `logabsdet` primitive.
+Determinant and log-determinant functions.
+- Dense matrices: computed via LU factorization.
+- Structured matrices (`Tridiagonal`, `SymTridiagonal`): computed via zero-allocation
+  Usmani recursion (`O(n)` time, `O(1)` memory).
+- `Diagonal`, `Bidiagonal`, and triangular matrices: computed directly along the diagonal.
+- On factorizations: forwarded to `LinearAlgebra`'s generic methods using `logabsdet`.
 """
 det(A::_DenseIn)=_LA.det(lu(A;check=false))
+@doc (@doc det) logdet
 logdet(A::_DenseIn)=_LA.logdet(lu(A;check=false))
+@doc (@doc det) logabsdet
 logabsdet(A::_DenseIn)=_LA.logabsdet(lu(A;check=false))
 det(F::_OxiFact)=_LA.det(F)
 logdet(F::_OxiFact)=_LA.logdet(F)
@@ -1176,6 +1205,7 @@ first: `schur_reorder` (unitary swaps), or `qz_reorder` for QZ.
   arrays are not overwritten.
 """
 ordschur(F::Schur,select::AbstractVector{Bool})=Schur(schur_reorder(_eng(F),_value_selector(_eng(F).values,select)))
+@doc (@doc ordschur) ordschur!
 ordschur!(F::Schur,select::AbstractVector{Bool})=(setfield!(F,:engine,schur_reorder(_eng(F),_value_selector(_eng(F).values,select))); F)
 ordschur(F::GeneralizedSchur,select::AbstractVector{Bool})=GeneralizedSchur(qz_reorder(_eng(F),_value_selector(_eng(F).values,select)))
 ordschur!(F::GeneralizedSchur,select::AbstractVector{Bool})=(setfield!(F,:engine,qz_reorder(_eng(F),_value_selector(_eng(F).values,select))); F)
@@ -1242,6 +1272,7 @@ parts. A `DomainError` is raised only when some eigenvalue really is complex
 (nonzero imaginary part), which is LinearAlgebra's contract.
 """
 eigmax
+@doc (@doc eigmax) eigmin
 for (f,g) in ((:eigmax,:maximum),(:eigmin,:minimum))
     @eval function $f(A::AbstractMatrix)
         v=eigvals(A)

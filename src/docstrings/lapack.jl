@@ -190,6 +190,18 @@ pivots). Same as `ldlt_factor(A; pivot=:bunchkaufman)`.
 """ bunchkaufman_factor
 
 @doc raw"""
+    ldlt_factor(A; uplo=:L, hermitian=true, pivot=:bunchkaufman, threaded=true, blocksize=nothing) -> LDLFactor
+
+Factorization `A[p,p] = L·D·Lᴴ` (or `L·D·Lᵀ` when `hermitian` is false), where `L` is unit lower
+triangular and `D` is block diagonal with 1×1 and 2×2 blocks (`blocks` lists their sizes).
+
+- `pivot=:bunchkaufman` selects the bounded Bunch–Kaufman pivoting strategy.
+- `pivot=:none` disables pivoting (suitable for positive definite matrices).
+- `uplo=:L` or `:U`: only the referenced triangle of `A` is accessed.
+- Uses blocked panel updates and multithreaded GEMMT trailing matrix rank-k updates.
+""" ldlt_factor
+
+@doc raw"""
     bidiagonal_factor(A) -> BidiagonalFactor
 
 Householder reduction `A = Q·B·Pᴴ` with `B` upper bidiagonal (lower for a wide
@@ -407,6 +419,19 @@ Singular values only, in decreasing order (no vectors computed); keywords as
 [`svd_factor`](@ref) (`algorithm=:jacobi` by default, `:golub_kahan`,
 `:divide_conquer`).
 """ singular_values
+
+@doc raw"""
+    svd_bidiagonal(A; algorithm=:golub_kahan, vectors=true, full=false, maxiter=..., rtol=..., leafsize=64, threaded=true) -> SVDFactor
+
+Singular value decomposition of a matrix through bidiagonal reduction:
+`A = U·Diagonal(S)·Vt`.
+
+- `algorithm=:golub_kahan`: implicitly shifted Golub–Kahan QR with SIMD Givens rotations
+  applied in L1/L2 cache-resident tiles across threads.
+- `algorithm=:divide_conquer`: divide-and-conquer secular equation solver (LAPACK `gesdd` scheme).
+- `vectors=false`: computes singular values only (same as [`singular_values`](@ref)).
+- `full=true`: square unitary factors `U` and `Vt` completing the null spaces.
+""" svd_bidiagonal
 
 @doc raw"""
     svd_divide_conquer(A; vectors=true, full=false, kwargs...) -> SVDFactor
