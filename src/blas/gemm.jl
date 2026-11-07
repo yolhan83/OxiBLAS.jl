@@ -487,13 +487,14 @@ function _gemm_workers(::Type{T},work,threaded,threshold,limit) where T
     threaded && limit>=2 && work>=threshold || return 1
     clamp(floor(Int,work*_gemm_cost(T)/_GEMM_GRAIN),2,limit)
 end
-# Grid pr x pc <= nt using the most workers, then the aspect closest to
-# sqrt(nt*m/n) (18 workers: 3x6 rather than 4x4).
+# Grid pr x pc <= nt using the most workers, balancing worker count with aspect
+# ratio fidelity (avoiding degenerate 1D strips on prime thread counts like 17).
 function _worker_grid(nt,m,n,rt,ct)
-    target=sqrt(nt*m/n); best=(1,min(nt,ct)); score=(-1,Inf)
+    target=sqrt(nt*m/n); best=(1,min(nt,ct)); score=-Inf
     for pr in 1:min(nt,rt)
         pc=min(nt÷pr,ct)
-        s=(pr*pc,-abs(log(pr/target)))
+        w=pr*pc; w==0 && continue
+        s=Float64(w) - 1.5 * abs(log(pr/target))
         s>score && (best=(pr,pc); score=s)
     end
     best

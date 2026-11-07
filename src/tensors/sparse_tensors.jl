@@ -512,7 +512,7 @@ function _csc_mul(A::_CSCLike,transA::Bool,X::AbstractMatrix;threaded=true)
     rows=transA ? n0 : m; n=size(X,2)
     C=zeros(T,rows,n)
     work=Float64(length(v))*n
-    workers=_operation_workers(n,work,threaded,262144)
+    workers=(threaded && Threads.nthreads()>=2 && n>=2 && work>=100_000) ? clamp(round(Int,work/60_000),2,min(n,Threads.nthreads())) : 1
     _foreach_range(n,workers) do cols,_
         @inbounds for j in cols
             if transA

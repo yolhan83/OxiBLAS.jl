@@ -266,12 +266,34 @@ function plan_einsum(specification::AbstractString,arrays::AbstractArray...;opti
     EinsumPlan(spec,Tuple[size(A) for A in arrays],labels,output,dims,steps,limit,peak,direct,T,isbitstype(T) ? :inline : :reference_slots,cost_model,Int(layout_weight),layouts,sparse,nonzeros)
 end
 
+# Dynamic worker calibration for tensor operations:
+# Scales smoothly with problem volume and user machine threads (Threads.nthreads()).
+# For single-batch contractions (batches == 1), lowering parallel_threshold to 500k
+# allows gemm!'s internal _gemm_workers to scale gradually (2 workers at ~5M, 5 at ~16M,
+# 14 at ~85M, etc.) instead of gating at the default 8M dense matrix threshold.
+const _TENSOR_GEMM_PARALLEL_THRESHOLD = 500_000
+
+@inline function _tensor_direct_workers(work::Real, n::Int, threaded::Bool)
+    (threaded && Threads.nthreads() >= 2 && n >= 2) || return 1
+    work < 80_000 && return 1
+    clamp(round(Int, work / 60_000), 2, min(n, Threads.nthreads()))
+end
+
+@inline function _tensor_batched_workers(::Type{T}, batches::Int, m::Int, n::Int, k::Int, threaded::Bool) where T
+    (threaded && Threads.nthreads() >= 2 && batches >= 2) || return 1
+    slice_work = Float64(m) * n * k
+    total_work = slice_work * batches
+    (total_work < 500_000 || slice_work < 20_000) && return 1
+    clamp(round(Int, total_work / 600_000), 2, min(batches, Threads.nthreads()))
+end
+
 function _einsum_direct(arrays,labels,output,dims,::Type{T};threaded=true,allocator=nothing) where T
     shape=Tuple(dims[l] for l in output); result=allocator===nothing ? Array{T}(undef,shape) : allocator(shape)
     reduced=setdiff(unique(vcat(labels...)),output)
     rshape=Tuple(dims[l] for l in reduced); rindices=CartesianIndices(rshape)
     outindices=CartesianIndices(shape)
-    workers=_operation_workers(length(result),Float64(length(result))*length(rindices)*length(arrays),threaded,262144)
+    work=Float64(length(result))*length(rindices)*length(arrays)
+    workers=_tensor_direct_workers(work,length(result),threaded)
     _foreach_range(length(result),workers) do range,_
         assignment=zeros(Int,maximum(vcat(output,reduced);init=0))
         for linear in range
@@ -354,11 +376,7 @@ function _einsum_pair(A,B,la,lb,out,dims;threaded=true,allocator=nothing,copies:
     shape=swap ? (n,m,batches) : (m,n,batches)
     c=allocator===nothing ? Array{T}(undef,shape) : allocator(shape)
     X,Y,tx,ty=swap ? (bb,aa,_flip(tb),_flip(ta)) : (aa,bb,ta,tb)
-    if batches==1
-        gemm!(view(c,:,:,1),view(X,:,:,1),view(Y,:,:,1);transA=tx,transB=ty,threaded,kwargs...)
-    else
-        gemm_strided_batched!(c,X,Y;transA=tx,transB=ty,threaded,kwargs...)
-    end
+    _pair_gemm!(c,X,Y,tx,ty,one(T),zero(T),threaded;kwargs...)
     reshaped=reshape(c,Tuple(dims[l] for l in natural))
     free_output && return (reshaped,natural)
     natural==out && return reshaped
@@ -510,15 +528,27 @@ function _pair_core!(D,X,ta::Symbol,Y,tb::Symbol,r::_PairRecipe,α,β,ws,::Type{
     r.swap ? _pair_store!(D,Y,X,_flip(tb),_flip(ta),r,α,β,ws,T,threaded) :
              _pair_store!(D,X,Y,ta,tb,r,α,β,ws,T,threaded)
 end
-function _pair_gemm!(D3,P,Q,tx,ty,α,β,threaded::Bool)
+function _pair_gemm!(D3,P,Q,tx,ty,α,β,threaded::Bool;kwargs...)
     batches=size(D3,3)
     if batches==1
-        gemm!(view(D3,:,:,1),view(P,:,:,1),view(Q,:,:,1),α,β;transA=tx,transB=ty,threaded)
-    elseif threaded && Threads.nthreads()>1
-        gemm_strided_batched!(D3,P,Q,α,β;transA=tx,transB=ty,threaded)
-    else   # one thread: a plain loop, no per-call vectors of views
-        for b in 1:batches
-            gemm!(view(D3,:,:,b),view(P,:,:,b),view(Q,:,:,b),α,β;transA=tx,transB=ty,threaded=false)
+        T=eltype(D3)
+        cfg=GemmConfig(T;parallel_threshold=_TENSOR_GEMM_PARALLEL_THRESHOLD)
+        gemm!(view(D3,:,:,1),view(P,:,:,1),view(Q,:,:,1),α,β;transA=tx,transB=ty,threaded,config=cfg,kwargs...)
+    else
+        T=eltype(D3)
+        m,n=size(D3,1),size(D3,2)
+        k=tx===:N ? size(P,2) : size(P,1)
+        w=_tensor_batched_workers(T,batches,m,n,k,threaded)
+        if w>1
+            _foreach_range(batches,w) do range,_
+                for b in range
+                    gemm!(view(D3,:,:,b),view(P,:,:,b),view(Q,:,:,b),α,β;transA=tx,transB=ty,threaded=false,kwargs...)
+                end
+            end
+        else
+            for b in 1:batches
+                gemm!(view(D3,:,:,b),view(P,:,:,b),view(Q,:,:,b),α,β;transA=tx,transB=ty,threaded=false,kwargs...)
+            end
         end
     end
     D3
