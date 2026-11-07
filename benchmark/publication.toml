@@ -35,11 +35,11 @@ csv = "results/20261107_142444.csv"
 # Spectral (SVD, Eigen, Schur, Hessenberg)
 [[campaigns]]
 threads = 1
-csv = "results/20261107_001929.csv"
+csv = "results/20261107_184411.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_103521.csv"
+csv = "results/20261107_183016.csv"
 
 # Tensors (einsum, einsum!)
 [[campaigns]]

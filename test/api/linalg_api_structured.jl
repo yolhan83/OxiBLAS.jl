@@ -111,6 +111,12 @@ end
     @test L\b ≈ D\b rtol=r
     @test OB.svdvals(A) ≈ LA.svdvals(D) rtol=r
     U,S,V=OB.svd(A); @test U*LA.Diagonal(S)*V' ≈ D rtol=r
+    Abig=LA.Bidiagonal(randn(T,160).+2,randn(T,159),uplo); Dbig=Matrix(Abig)
+    Ubig,Sbig,Vbig=OB.svd(Abig)
+    @test Ubig*LA.Diagonal(Sbig)*Vbig' ≈ Dbig rtol=r
+    @test Ubig'*Ubig ≈ LA.I rtol=r
+    @test Vbig'*Vbig ≈ LA.I rtol=r
+    @test OB.svdvals(Abig) ≈ Sbig rtol=r
     @test OB.rank(A)==n
     @test OB.cond(A) ≈ LA.cond(D) rtol=sqrt(r)
     @test OB.eigvals(A) ≈ A.dv

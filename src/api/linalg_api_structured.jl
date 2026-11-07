@@ -679,22 +679,17 @@ end
 # Bidiagonal SVD: B = P·|B|·Qᴴ with unit diagonal P and Q, so the
 # bidiagonal QR kernel runs on the moduli |d|, |e| (O(n) memory without
 # vectors). A lower B is the transpose of the upper one with the same d, e.
-function _bidiag_svd(B::_LABidiag,vectors::Bool)
-    T=_la_eltype(eltype(B)); R=real(T); n=size(B,1)
-    d=R[abs(x) for x in B.dv]; e=R[abs(x) for x in B.ev]
-    U0=vectors ? _identity(R,n) : nothing; V0=vectors ? _identity(R,n) : nothing
-    _bidiagonal_qr!(d,e,U0,V0,_floating_iterations(R,160)*max(1,n)^2,8eps(R))
-    order=sortperm(d;rev=true); S=d[order]
-    vectors || return S,nothing,nothing
+function _bidiag_phases(::Type{T},B::_LABidiag) where T
+    n=size(B,1)
     ph(x)=iszero(x) ? one(T) : T(x/abs(x))
     p=Vector{T}(undef,n); q=Vector{T}(undef,n)
-    n>0 && (q[1]=one(T); p[1]=ph(B.dv[1]))
-    for j in 1:n-1
-        q[j+1]=conj(ph(B.ev[j]))*p[j]; p[j+1]=ph(B.dv[j+1])*q[j+1]
+    if n>0
+        q[1]=one(T); p[1]=ph(B.dv[1])
+        @inbounds for j in 1:n-1
+            q[j+1]=conj(ph(B.ev[j]))*p[j]; p[j+1]=ph(B.dv[j+1])*q[j+1]
+        end
     end
-    U=T.(U0[:,order]); V=T.(V0[:,order])
-    for j in 1:n, i in 1:n; U[i,j]*=p[i]; V[i,j]*=q[i]; end
-    B.uplo=='U' ? (S,U,V) : (S,conj.(V),conj.(U))
+    p,q
 end
 """
     OxiBLAS.svd(B::Bidiagonal) / svdvals(B::Bidiagonal)
@@ -706,9 +701,43 @@ no dense copy. Diagonal: sorted moduli, with vectors made of the phases and
 the permutation, as in LinearAlgebra.
 """
 function svd(B::_LABidiag)
-    S,U,V=_bidiag_svd(B,true); SVD(SVDFactor(U,S,Matrix(adjoint(V)),0))
+    T=_la_eltype(eltype(B)); R=real(T); n=size(B,1)
+    d=R[abs(x) for x in B.dv]; e=R[abs(x) for x in B.ev]
+    maxiter=_floating_iterations(R,160)*max(1,n)^2; rtol=8eps(R)
+    p,q=_bidiag_phases(T,B)
+    if R<:RealFloat && n>=128
+        S,U,Vt,_=_bidiagonal_qr_fused!(T,d,e,p,q,maxiter,rtol;lower=B.uplo!='U',want_vt=true,threaded=true)
+        return SVD(SVDFactor(U,S,Vt,0))
+    end
+    U0=_identity(R,n); V0=_identity(R,n)
+    _bidiagonal_qr!(d,e,U0,V0,maxiter,rtol)
+    order=sortperm(d;rev=true); S=d[order]
+    U=Matrix{T}(undef,n,n); Vt=Matrix{T}(undef,n,n)
+    if B.uplo=='U'
+        @inbounds for j in 1:n
+            col=order[j]
+            for i in 1:n
+                U[i,j]=p[i]*T(U0[i,col])
+                Vt[j,i]=conj(q[i])*T(V0[i,col])
+            end
+        end
+    else
+        @inbounds for j in 1:n
+            col=order[j]
+            for i in 1:n
+                U[i,j]=conj(q[i])*T(V0[i,col])
+                Vt[j,i]=p[i]*T(U0[i,col])
+            end
+        end
+    end
+    SVD(SVDFactor(U,S,Vt,0))
 end
-svdvals(B::_LABidiag)=_bidiag_svd(B,false)[1]
+function svdvals(B::_LABidiag)
+    T=_la_eltype(eltype(B)); R=real(T); n=size(B,1)
+    d=R[abs(x) for x in B.dv]; e=R[abs(x) for x in B.ev]
+    _bidiagonal_qr!(d,e,nothing,nothing,_floating_iterations(R,160)*max(1,n)^2,8eps(R))
+    sort!(d;rev=true)
+end
 function svd(D::_LADiag)
     d=_fvec(D.diag); T=eltype(d); n=length(d); s=abs.(d); p=sortperm(s;rev=true)
     U=zeros(T,n,n); V=zeros(T,n,n)

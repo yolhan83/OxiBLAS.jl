@@ -46,10 +46,90 @@ end
         c=_splat(cs[k],Val(L));s=ss[k]
         y=_vload(p+((nxt-1)*ld+row-1)*sizeof(T),Val(L))
         _vstore(p+((cur-1)*ld+row-1)*sizeof(T),_vfma(c,x,_vmul(_splat(s,Val(L)),y)))
-        x=_vfma(c,y,_vmul(_splat(-s,Val(L)),x));cur=nxt
+        x=_vfma(_splat(-s,Val(L)),x,_vmul(c,y));cur=nxt
     end
     _vstore(p+((cur-1)*ld+row-1)*sizeof(T),x)
     nothing
+end
+@inline function _svd_dense_carry_tile_fwd!(p_buf::Ptr{T},p_cs::Ptr{T},p_ss::Ptr{T},lo::Int,hi::Int,::Val{L}) where {T,L}
+    stride=L*sizeof(T)
+    x=_vload(p_buf+(lo-1)*stride,Val(L))
+    @inbounds for k in lo:hi-1
+        c=_splat(unsafe_load(p_cs,k),Val(L))
+        s=unsafe_load(p_ss,k)
+        y=_vload(p_buf+k*stride,Val(L))
+        _vstore(p_buf+(k-1)*stride,_vfma(c,x,_vmul(_splat(s,Val(L)),y)))
+        x=_vfma(_splat(-s,Val(L)),x,_vmul(c,y))
+    end
+    _vstore(p_buf+(hi-1)*stride,x)
+    nothing
+end
+@inline function _svd_dense_carry_tile_bwd!(p_buf::Ptr{T},p_cs::Ptr{T},p_ss::Ptr{T},lo::Int,hi::Int,::Val{L}) where {T,L}
+    stride=L*sizeof(T)
+    x=_vload(p_buf+(hi-1)*stride,Val(L))
+    @inbounds for k in hi-1:-1:lo
+        c=_splat(unsafe_load(p_cs,k),Val(L))
+        s=unsafe_load(p_ss,k)
+        y=_vload(p_buf+(k-1)*stride,Val(L))
+        _vstore(p_buf+k*stride,_vfma(c,x,_vmul(_splat(s,Val(L)),y)))
+        x=_vfma(_splat(-s,Val(L)),x,_vmul(c,y))
+    end
+    _vstore(p_buf+(lo-1)*stride,x)
+    nothing
+end
+function _svd_apply_recorded_tile!(buf::Matrix{R},r_lo::Int,r_hi::Int,
+                                   cs_all::Vector{R},ss_all::Vector{R},
+                                   sw_off::Vector{Int},sw_lo::Vector{Int},sw_hi::Vector{Int},sw_kind::Vector{Int8},
+                                   nsw::Int,is_u::Bool,::Val{L}) where {R<:RealFloat,L}
+    @inbounds for c in r_lo:r_hi
+        buf[c-r_lo+1,c]=one(R)
+    end
+    nz_lo=r_lo; nz_hi=r_hi
+    skip_kind=is_u ? Int8(-2) : Int8(2)
+    GC.@preserve buf cs_all ss_all begin
+        p_buf=pointer(buf)
+        p_cs0=pointer(cs_all)
+        p_ss0=pointer(ss_all)
+        @inbounds for s in 1:nsw
+            kind=sw_kind[s]
+            kind==skip_kind && continue
+            lo=sw_lo[s]; hi=sw_hi[s]
+            (hi<nz_lo || lo>nz_hi) && continue
+            off=sw_off[s]
+            if kind==Int8(1)
+                eff_lo=max(lo,nz_lo-1)
+                nz_lo=min(nz_lo,eff_lo); nz_hi=max(nz_hi,hi)
+                _svd_dense_carry_tile_fwd!(p_buf,p_cs0+(off-lo+1)*sizeof(R),p_ss0+(off-lo+1)*sizeof(R),eff_lo,hi,Val(L))
+            elseif kind==Int8(-1)
+                eff_hi=min(hi,nz_hi+1)
+                nz_lo=min(nz_lo,lo); nz_hi=max(nz_hi,eff_hi)
+                _svd_dense_carry_tile_bwd!(p_buf,p_cs0+(off-lo+1)*sizeof(R),p_ss0+(off-lo+1)*sizeof(R),lo,eff_hi,Val(L))
+            elseif kind==Int8(2)
+                nz_lo=min(nz_lo,lo); nz_hi=max(nz_hi,hi)
+                base=off-lo
+                for k in lo+1:hi
+                    ck=cs_all[base+k]; sk=ss_all[base+k]
+                    @simd for r in 1:L
+                        x=buf[r,k]; y=buf[r,lo]
+                        buf[r,k]=muladd(ck,x,sk*y)
+                        buf[r,lo]=muladd(ck,y,-sk*x)
+                    end
+                end
+            else
+                nz_lo=min(nz_lo,lo); nz_hi=max(nz_hi,hi)
+                base=off-lo+1
+                for k in hi-1:-1:lo
+                    ck=cs_all[base+k]; sk=ss_all[base+k]
+                    @simd for r in 1:L
+                        x=buf[r,k]; y=buf[r,hi]
+                        buf[r,k]=muladd(ck,x,sk*y)
+                        buf[r,hi]=muladd(ck,y,-sk*x)
+                    end
+                end
+            end
+        end
+    end
+    nz_lo,nz_hi
 end
 function _svd_dense_plane_batch!(Q::Matrix{T},cs,ss,lo,hi,up) where {T<:RealFloat}
     order=up ? (hi-1:-1:lo) : (lo:hi-1);first=up ? hi : lo
