@@ -40,10 +40,12 @@ function sparse_norm(A::NativeSparse,kind=:fro)
             end
             return mcol
         end
-        C=A isa CSRMatrix ? A : CSRMatrix(A)
-        sums=zeros(R,size(C,2))
-        @inbounds for p in eachindex(C.values)
-            sums[C.colind[p]]+=abs(C.values[p])
+        C_one=A isa CSRMatrix ? A : CSRMatrix(A)
+        sums=zeros(R,size(C_one,2))
+        vals_one=C_one.values
+        cols_one=C_one.colind
+        @inbounds for p in eachindex(vals_one)
+            sums[cols_one[p]]+=abs(vals_one[p])
         end
         return maximum(sums;init=zero(R))
     elseif kind in (:inf,Inf)
@@ -64,8 +66,16 @@ function sparse_norm(A::NativeSparse,kind=:fro)
             end
             return maximum(sums;init=zero(R))
         end
-        C=CSRMatrix(A)
-        return maximum((sum(abs,view(C.values,C.rowptr[i]:C.rowptr[i+1]-1)) for i in 1:C.m);init=zero(R))
+        C_inf=CSRMatrix(A)
+        mrow_inf=zero(R)
+        @inbounds for i in 1:C_inf.m
+            s=zero(R)
+            for q in C_inf.rowptr[i]:C_inf.rowptr[i+1]-1
+                s+=abs(C_inf.values[q])
+            end
+            s>mrow_inf && (mrow_inf=s)
+        end
+        return mrow_inf
     end
     throw(ArgumentError("unsupported sparse norm"))
 end
