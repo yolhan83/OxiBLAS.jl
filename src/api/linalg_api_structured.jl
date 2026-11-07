@@ -1044,8 +1044,163 @@ function norm(A::Union{_StructIn,_StructHS},p::Real=2)
     end
     s^inv(p)
 end
+function _tridiag_opnorm1(A::_LATridiag)
+    d, dl, du = A.d, A.dl, A.du
+    n = length(d)
+    n == 0 && return zero(real(eltype(A)))
+    n == 1 && return abs(d[1])
+    n == 2 && return max(abs(d[1]) + abs(dl[1]), abs(du[1]) + abs(d[2]))
+    mx = abs(d[1]) + abs(dl[1])
+    if n >= 200_000 && Threads.nthreads() > 1
+        nt = Threads.nthreads()
+        chunk = cld(n - 2, nt)
+        local_max = zeros(real(eltype(A)), nt)
+        Threads.@threads for tid in 1:nt
+            j0 = 2 + (tid - 1) * chunk
+            j1 = min(n - 1, j0 + chunk - 1)
+            if j0 <= j1
+                m = zero(real(eltype(A)))
+                @inbounds @simd for j in j0:j1
+                    s = abs(du[j-1]) + abs(d[j]) + abs(dl[j])
+                    m = max(m, s)
+                end
+                local_max[tid] = m
+            end
+        end
+        return max(mx, maximum(local_max), abs(du[n-1]) + abs(d[n]))
+    else
+        @inbounds @simd for j in 2:n-1
+            s = abs(du[j-1]) + abs(d[j]) + abs(dl[j])
+            mx = max(mx, s)
+        end
+        return max(mx, abs(du[n-1]) + abs(d[n]))
+    end
+end
+
+function _tridiag_opnormInf(A::_LATridiag)
+    d, dl, du = A.d, A.dl, A.du
+    n = length(d)
+    n == 0 && return zero(real(eltype(A)))
+    n == 1 && return abs(d[1])
+    n == 2 && return max(abs(d[1]) + abs(du[1]), abs(dl[1]) + abs(d[2]))
+    mx = abs(d[1]) + abs(du[1])
+    if n >= 200_000 && Threads.nthreads() > 1
+        nt = Threads.nthreads()
+        chunk = cld(n - 2, nt)
+        local_max = zeros(real(eltype(A)), nt)
+        Threads.@threads for tid in 1:nt
+            i0 = 2 + (tid - 1) * chunk
+            i1 = min(n - 1, i0 + chunk - 1)
+            if i0 <= i1
+                m = zero(real(eltype(A)))
+                @inbounds @simd for i in i0:i1
+                    s = abs(dl[i-1]) + abs(d[i]) + abs(du[i])
+                    m = max(m, s)
+                end
+                local_max[tid] = m
+            end
+        end
+        return max(mx, maximum(local_max), abs(dl[n-1]) + abs(d[n]))
+    else
+        @inbounds @simd for i in 2:n-1
+            s = abs(dl[i-1]) + abs(d[i]) + abs(du[i])
+            mx = max(mx, s)
+        end
+        return max(mx, abs(dl[n-1]) + abs(d[n]))
+    end
+end
+
+function _symtridiag_opnorm1Inf(A::_LASymTridiag)
+    dv, ev = A.dv, A.ev
+    n = length(dv)
+    n == 0 && return zero(real(eltype(A)))
+    n == 1 && return abs(dv[1])
+    n == 2 && return max(abs(dv[1]) + abs(ev[1]), abs(ev[1]) + abs(dv[2]))
+    mx = abs(dv[1]) + abs(ev[1])
+    if n >= 200_000 && Threads.nthreads() > 1
+        nt = Threads.nthreads()
+        chunk = cld(n - 2, nt)
+        local_max = zeros(real(eltype(A)), nt)
+        Threads.@threads for tid in 1:nt
+            j0 = 2 + (tid - 1) * chunk
+            j1 = min(n - 1, j0 + chunk - 1)
+            if j0 <= j1
+                m = zero(real(eltype(A)))
+                @inbounds @simd for j in j0:j1
+                    s = abs(ev[j-1]) + abs(dv[j]) + abs(ev[j])
+                    m = max(m, s)
+                end
+                local_max[tid] = m
+            end
+        end
+        return max(mx, maximum(local_max), abs(ev[n-1]) + abs(dv[n]))
+    else
+        @inbounds @simd for j in 2:n-1
+            s = abs(ev[j-1]) + abs(dv[j]) + abs(ev[j])
+            mx = max(mx, s)
+        end
+        return max(mx, abs(ev[n-1]) + abs(dv[n]))
+    end
+end
+
+function _bidiag_opnorm1(A::_LABidiag)
+    dv, ev = A.dv, A.ev
+    n = length(dv)
+    n == 0 && return zero(real(eltype(A)))
+    n == 1 && return abs(dv[1])
+    if A.uplo == 'U'
+        mx = abs(dv[1])
+        @inbounds @simd for j in 2:n
+            s = abs(ev[j-1]) + abs(dv[j])
+            mx = max(mx, s)
+        end
+        return mx
+    else
+        mx = abs(dv[n])
+        @inbounds @simd for j in 1:n-1
+            s = abs(dv[j]) + abs(ev[j])
+            mx = max(mx, s)
+        end
+        return mx
+    end
+end
+
+function _bidiag_opnormInf(A::_LABidiag)
+    dv, ev = A.dv, A.ev
+    n = length(dv)
+    n == 0 && return zero(real(eltype(A)))
+    n == 1 && return abs(dv[1])
+    if A.uplo == 'U'
+        mx = abs(dv[n])
+        @inbounds @simd for i in 1:n-1
+            s = abs(dv[i]) + abs(ev[i])
+            mx = max(mx, s)
+        end
+        return mx
+    else
+        mx = abs(dv[1])
+        @inbounds @simd for i in 2:n
+            s = abs(ev[i-1]) + abs(dv[i])
+            mx = max(mx, s)
+        end
+        return mx
+    end
+end
+
 function opnorm(A::Union{_StructIn,_StructHS},p::Real=2)
     p in (1,2,Inf) || throw(ArgumentError("p must be 1, 2 or Inf"))
+    if A isa _LATridiag
+        p == 1 && return _tridiag_opnorm1(A)
+        p == Inf && return _tridiag_opnormInf(A)
+    elseif A isa _LASymTridiag
+        (p == 1 || p == Inf) && return _symtridiag_opnorm1Inf(A)
+    elseif A isa _LABidiag
+        p == 1 && return _bidiag_opnorm1(A)
+        p == Inf && return _bidiag_opnormInf(A)
+        s = svdvals(A); return isempty(s) ? zero(real(eltype(A))) : s[1]
+    elseif A isa _LADiag
+        p in (1, 2, Inf) && return isempty(A.diag) ? zero(real(eltype(A))) : maximum(abs, A.diag)
+    end
     T=_la_eltype(eltype(A)); R=real(T); m,n=size(A); kl,ku=_struct_bands(A)
     if p==1
         mx=zero(R)
@@ -1063,9 +1218,6 @@ function opnorm(A::Union{_StructIn,_StructHS},p::Real=2)
             s>mx && (mx=s)
         end
         return mx
-    end
-    if A isa Union{_LADiag,_LABidiag}
-        s=svdvals(A); return isempty(s) ? zero(R) : s[1]
     end
     matrix_norm(Matrix{T}(A),:two)
 end
