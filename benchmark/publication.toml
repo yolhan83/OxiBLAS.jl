@@ -12,7 +12,7 @@ csv = "results/20261106_201357.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261106_203127.csv"
+csv = "results/20261107_100019.csv"
 
 # Factorizations (LU, Cholesky, QR, LQ, SVD, ...)
 [[campaigns]]
@@ -21,7 +21,7 @@ csv = "results/20261106_220602.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261106_214429.csv"
+csv = "results/20261107_101726.csv"
 
 # Solves (\, ldiv, ldiv!)
 [[campaigns]]
@@ -30,7 +30,7 @@ csv = "results/20261106_222555.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261106_234509.csv"
+csv = "results/20261107_111501.csv"
 
 # Spectral (SVD, Eigen, Schur, Hessenberg)
 [[campaigns]]
@@ -39,7 +39,7 @@ csv = "results/20261107_001929.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_003546.csv"
+csv = "results/20261107_103521.csv"
 
 # Tensors (einsum, einsum!)
 [[campaigns]]
@@ -57,4 +57,4 @@ csv = "results/20261107_005651.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_014813.csv"
+csv = "results/20261107_105158.csv"
