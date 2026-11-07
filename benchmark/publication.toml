@@ -53,8 +53,8 @@ csv = "results/20261107_094224.csv"
 # Functions (det, inv, norm, opnorm, tr, exp, etc.)
 [[campaigns]]
 threads = 1
-csv = "results/20261107_005651.csv"
+csv = "results/20261107_170512.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_105158.csv"
+csv = "results/20261107_164200.csv"

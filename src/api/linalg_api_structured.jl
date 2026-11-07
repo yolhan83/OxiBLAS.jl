@@ -145,14 +145,34 @@ for (W,tr) in ((:LU,:(:N)),(:_AdjF,:(:C)),(:_TrF,:(:T)))
     end
 end
 function _LA.logabsdet(F::LU{T,<:TriangularEngine}) where T
-    E=_eng(F); d=zero(real(T)); s=one(T)
-    E.unit && return (d,s)
-    for i in 1:size(E.src,1)
+    E=_eng(F); d=zero(real(T))
+    E.unit && return (d,one(T))
+    if T<:Real
+        neg=false
+        @inbounds for i in 1:size(E.src,1)
+            u=E.src[i,i]
+            iszero(u) && return (oftype(d,-Inf),zero(T))
+            neg=xor(neg,u<zero(T))
+            d+=Base.log(abs(u))
+        end
+        return (d,neg ? -one(T) : one(T))
+    end
+    s=one(T)
+    @inbounds for i in 1:size(E.src,1)
         u=E.src[i,i]
         iszero(u) && return (oftype(d,-Inf),zero(T))
         m=abs(u); d+=Base.log(m); s*=u/m
     end
     (d,s)
+end
+function _LA.det(F::LU{T,<:TriangularEngine}) where T
+    E=_eng(F)
+    E.unit && return one(T)
+    p=one(T)
+    @inbounds @simd for i in 1:size(E.src,1)
+        p*=E.src[i,i]
+    end
+    p
 end
 # Unit lower factor A·D⁻¹ of a lower matrix, in the input's own structure.
 _unit_lower(A::_LA.LowerTriangular,d)=(M=copy(parent(A)); n=size(M,1);
@@ -703,15 +723,169 @@ svdvals(D::_LADiag)=sort!(abs.(_fvec(D.diag));rev=true)
 # Dense triangulars get their own methods (a joint Union would be ambiguous
 # with det(::_DenseIn)).
 const _StructIn=Union{_LADiag,_LABidiag,_LATridiag,_LASymTridiag,BandedMatrix,PackedMatrix}
-_struct_det_factor(A::_StructIn)=factorize(A;check=false)
+function _vec_det(::Type{T},v::AbstractVector;pair::Bool=true) where T
+    isempty(v) && return one(T)
+    pair && eltype(v)===T && return prod(v)
+    prod(Base.Fix1(convert,T),v;init=one(T))
+end
+function _vec_logabsdet(::Type{T},v::AbstractVector,widen_f16::Bool=false) where T
+    R=real(T); Acc=(R===Float16 && !widen_f16) ? R : promote_type(R,Float64)
+    d=zero(Acc)
+    if T<:Real
+        neg=false
+        @inbounds for i in eachindex(v)
+            u=T(v[i])
+            iszero(u) && return (oftype(zero(R),-Inf),zero(T))
+            neg=xor(neg,u<zero(T))
+            d+=Base.log(abs(u))
+        end
+        return (R(d),neg ? -one(T) : one(T))
+    end
+    s=one(T)
+    @inbounds for i in eachindex(v)
+        u=T(v[i])
+        iszero(u) && return (oftype(zero(R),-Inf),zero(T))
+        m=abs(u); d+=Base.log(m); s*=u/m
+    end
+    (R(d),s)
+end
+function det(A::Union{_DenseUpperTri,_DenseLowerTri})
+    _LA.checksquare(A); T=_la_eltype(eltype(A))
+    A isa Union{_LA.UnitUpperTriangular,_LA.UnitLowerTriangular} && return one(T)
+    P=parent(A); _vec_det(T,@view(P[_LA.diagind(P)]))
+end
+function logabsdet(A::Union{_DenseUpperTri,_DenseLowerTri})
+    _LA.checksquare(A); T=_la_eltype(eltype(A))
+    A isa Union{_LA.UnitUpperTriangular,_LA.UnitLowerTriangular} && return (zero(real(T)),one(T))
+    P=parent(A); _vec_logabsdet(T,@view(P[_LA.diagind(P)]))
+end
+function logdet(A::Union{_DenseUpperTri,_DenseLowerTri})
+    _LA.checksquare(A)
+    A isa Union{_LA.UnitUpperTriangular,_LA.UnitLowerTriangular} && return zero(_la_eltype(eltype(A)))
+    d,s=logabsdet(A); d+Base.log(s)
+end
+det(D::_LADiag)=(_LA.checksquare(D); _vec_det(_la_eltype(eltype(D)),D.diag;pair=true))
+logabsdet(D::_LADiag)=(_LA.checksquare(D); _vec_logabsdet(_la_eltype(eltype(D)),D.diag,true))
+logdet(D::_LADiag)=((d,s)=logabsdet(D); d+Base.log(s))
+det(B::_LABidiag)=(_LA.checksquare(B); _vec_det(_la_eltype(eltype(B)),B.dv;pair=false))
+logabsdet(B::_LABidiag)=(_LA.checksquare(B); _vec_logabsdet(_la_eltype(eltype(B)),B.dv,false))
+logdet(B::_LABidiag)=((d,s)=logabsdet(B); d+Base.log(s))
+function _det_usmani(::Type{T},a::AbstractVector,b::AbstractVector,c::AbstractVector) where T
+    n=length(b); θa=oneunit(T)
+    n==0 && return θa
+    θb=T(b[1])
+    @inbounds for i in 2:n
+        θb,θa=T(b[i])*θb-T(a[i-1])*T(c[i-1])*θa,θb
+    end
+    θb
+end
+function _det_usmani(::Type{T},a::AbstractVector,b::AbstractVector,c::AbstractVector,shift::Number) where T
+    shift===false && return _det_usmani(T,a,b,c)
+    n=length(b); θa=oneunit(T)+zero(shift)
+    n==0 && return θa
+    θb=T(b[1])+shift
+    @inbounds for i in 2:n
+        θb,θa=(T(b[i])+shift)*θb-T(a[i-1])*T(c[i-1])*θa,θb
+    end
+    θb
+end
+function _tridiag_logabsdet(::Type{T},dl::AbstractVector,d::AbstractVector,du::AbstractVector) where T
+    R=real(T); n=length(d)
+    n==0 && return (zero(R),one(T))
+    Acc=R===Float16 ? R : promote_type(R,Float64)
+    val=zero(Acc)
+    uk=T(d[1]); duk=n>1 ? T(du[1]) : zero(T)
+    if T<:Real
+        neg=false
+        @inbounds for k in 1:n-1
+            dlk=T(dl[k]); dn=T(d[k+1]); dun=k+1<n ? T(du[k+1]) : zero(T)
+            if abs(uk)>=abs(dlk)
+                piv=uk; iszero(piv) && return (oftype(zero(R),-Inf),zero(T))
+                m=dlk/piv; uk=dn-m*duk; duk=dun
+            else
+                neg=!neg; piv=dlk; m=uk/piv; uk=duk-m*dn; duk=-m*dun
+            end
+            neg=xor(neg,piv<zero(T))
+            val+=Base.log(abs(piv))
+        end
+        iszero(uk) && return (oftype(zero(R),-Inf),zero(T))
+        neg=xor(neg,uk<zero(T))
+        val+=Base.log(abs(uk))
+        return (R(val),neg ? -one(T) : one(T))
+    end
+    s=one(T)
+    @inbounds for k in 1:n-1
+        dlk=T(dl[k]); dn=T(d[k+1]); dun=k+1<n ? T(du[k+1]) : zero(T)
+        if abs(uk)>=abs(dlk)
+            piv=uk; iszero(piv) && return (oftype(zero(R),-Inf),zero(T))
+            m=dlk/piv; uk=dn-m*duk; duk=dun
+        else
+            s=-s; piv=dlk; m=uk/piv; uk=duk-m*dn; duk=-m*dun
+        end
+        mag=abs(piv); val+=Base.log(mag); s*=piv/mag
+    end
+    iszero(uk) && return (oftype(zero(R),-Inf),zero(T))
+    mag=abs(uk); val+=Base.log(mag); s*=uk/mag
+    (R(val),s)
+end
+function _symtridiag_logabsdet(::Type{T},dv::AbstractVector,ev::AbstractVector,shift::Number=false) where T
+    R=real(T); n=length(dv)
+    n==0 && return (zero(R),one(T))
+    Acc=R===Float16 ? R : promote_type(R,Float64)
+    val=zero(Acc); phase=one(T); neg=false
+    has_sh=shift!==false && !iszero(shift)
+    sh=has_sh ? T(shift) : zero(T)
+    k=1; dk=has_sh ? T(dv[1])+sh : T(dv[1])
+    @inbounds while k<=n
+        mag=abs(dk)
+        if !iszero(mag)
+            val+=Base.log(mag)
+            if T<:Real
+                neg=xor(neg,dk<zero(T))
+            else
+                phase*=dk/mag
+            end
+            if k<n
+                ek=T(ev[k]); lk=ek/dk
+                dnext=has_sh ? T(dv[k+1])+sh : T(dv[k+1])
+                dk=dnext-lk*ek
+            end
+            k+=1
+        elseif k<n && !iszero(ev[k])
+            ek=T(ev[k]); dk1=has_sh ? T(dv[k+1])+sh : T(dv[k+1])
+            scale,aa,_,_,_,det2=_ldl_block_scaled(dk,ek,dk1,false,k)
+            mag2=abs(det2); val+=2*Base.log(scale)+Base.log(mag2)
+            if T<:Real
+                neg=xor(neg,det2<zero(T))
+            else
+                phase*=det2/mag2
+            end
+            if k+1<n
+                ek1=T(ev[k+1]); l1k1=((ek1/scale)*aa)/det2
+                dnext2=has_sh ? T(dv[k+2])+sh : T(dv[k+2])
+                dk=dnext2-l1k1*ek1
+            end
+            k+=2
+        else
+            return (oftype(zero(R),-Inf),zero(T))
+        end
+    end
+    (R(val),T<:Real ? (neg ? -one(T) : one(T)) : phase)
+end
+det(A::_LATridiag)=(_LA.checksquare(A); _det_usmani(_la_eltype(eltype(A)),A.dl,A.d,A.du))
+logabsdet(A::_LATridiag)=(_LA.checksquare(A); _tridiag_logabsdet(_la_eltype(eltype(A)),A.dl,A.d,A.du))
+logdet(A::_LATridiag)=((d,s)=logabsdet(A); d+Base.log(s))
+det(A::_LASymTridiag;shift::Number=false)=(_LA.checksquare(A); _det_usmani(_la_eltype(eltype(A)),A.ev,A.dv,A.ev,shift))
+logabsdet(A::_LASymTridiag;shift::Number=false)=(_LA.checksquare(A); _symtridiag_logabsdet(_la_eltype(eltype(A)),A.dv,A.ev,shift))
+logdet(A::_LASymTridiag)=((d,s)=logabsdet(A); d+Base.log(s))
+_struct_det_factor(A::BandedMatrix)=factorize(A;check=false)
 function _struct_det_factor(A::PackedMatrix)
     A.kind===:triangular && return LU(_tri_engine(A))
     C=cholesky(A;check=false)
     _LA.issuccess(C) ? C : lu(Matrix(A);check=false)
 end
 for f in (:det,:logdet,:logabsdet)
-    @eval $f(A::_StructIn)=(_LA.checksquare(A); _LA.$f(_struct_det_factor(A)))
-    @eval $f(A::Union{_DenseUpperTri,_DenseLowerTri})=_LA.$f(factorize(A;check=false))
+    @eval $f(A::Union{BandedMatrix,PackedMatrix})=(_LA.checksquare(A); _LA.$f(_struct_det_factor(A)))
 end
 """
     OxiBLAS.inv(A) for structured matrices
