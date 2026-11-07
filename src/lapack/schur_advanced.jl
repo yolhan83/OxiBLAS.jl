@@ -30,7 +30,7 @@ end
 and block TREVC back/forward substitution. Real 2x2 blocks are preserved during
 factorization; the returned eigenvectors have one complex column per eigenvalue.
 """
-function eigen_general(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),threaded=true,balance=false,left=false,algorithm=:standard) where {T<:GenericFloat}
+function eigen_general(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),threaded=true,balance=false,left=false,algorithm=:auto) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     n=_square(A); C=Complex{real(T)}
     if balance
@@ -39,7 +39,7 @@ function eigen_general(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),threaded
         W=left ? balance_backtransform(B,E.left_vectors;left=true) : nothing
         return (;values=E.values,vectors=V,left_vectors=W,schur=E.schur,balancing=B)
     end
-    F=schur_factor(A;maxiter,algorithm); X=_ordinary_vectors(F.T)
+    F=schur_factor(A;maxiter,algorithm,threaded); X=_ordinary_vectors(F.T)
     vectors=_mm(C.(F.Z),X;threaded)
     left_vectors=left ? _mm(C.(F.Z),_ordinary_vectors(F.T;left=true);threaded) : nothing
     (;values=F.values,vectors,left_vectors,schur=F,balancing=nothing)

@@ -112,9 +112,21 @@ vectors=false returns U=Vt=nothing. Nonconvergence throws ConvergenceError.
 disjoint column rounds; `:golub_kahan` and `:divide_conquer` use the bidiagonal
 entry point.
 """
-function svd_factor(A::AbstractMatrix{T};vectors=true,maxsweeps=100,algorithm=:jacobi,full=false,threaded=true,
+function svd_factor(A::AbstractMatrix{T};vectors=true,maxsweeps=100,algorithm=:auto,full=false,threaded=true,
                     rtol=8eps(real(T))*sqrt(real(T)(max(1,min(size(A)...)))),kwargs...) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
+    if algorithm===:auto
+        cfg=get_spectral_config(T)
+        m,n=size(A); k=min(m,n)
+        cutoff=cfg!==nothing ? cfg.svd_bidiag_threshold : ((T<:Complex) ? 4 : 8)
+        if cfg!==nothing && cfg.svd_algorithm in (:golub_kahan,:divide_conquer) && k>=cutoff
+            return svd_bidiagonal(A;algorithm=cfg.svd_algorithm,vectors,full,threaded,rtol,kwargs...)
+        elseif T<:NativeFloat && maxsweeps>0 && k>=cutoff
+            return svd_bidiagonal(A;algorithm=:golub_kahan,vectors,full,threaded,rtol,kwargs...)
+        else
+            algorithm=:jacobi
+        end
+    end
     algorithm in (:golub_kahan,:divide_conquer) && return svd_bidiagonal(A;algorithm,vectors,full,threaded,rtol,kwargs...)
     algorithm in (:jacobi,:parallel_jacobi,:block_jacobi,:parallel_block_jacobi) || throw(ArgumentError("unknown SVD algorithm"))
     isempty(kwargs) || throw(ArgumentError("unknown Jacobi SVD keyword"))

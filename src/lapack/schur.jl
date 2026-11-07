@@ -196,8 +196,20 @@ Finite input is scaled before reduction. Failure to converge throws
 ConvergenceError, including the remaining active block and iteration count.
 No balancing, reordering or eigenvector back substitution is performed.
 """
-function schur_factor(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),algorithm=:standard,kwargs...) where {T<:GenericFloat}
-    algorithm===:multishift && return schur_multishift(A;maxiter,kwargs...)
+function schur_factor(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),algorithm=:auto,threaded=true,kwargs...) where {T<:GenericFloat}
+    threaded=threaded && generic_threadsafe(T)
+    if algorithm===:auto
+        cfg=get_spectral_config(T)
+        n=_square(A)
+        cutoff=cfg!==nothing ? cfg.schur_multishift_threshold : ((T<:Complex) ? 192 : 256)
+        preferred_algo=cfg!==nothing ? cfg.schur_algorithm : :multishift
+        if T<:NativeFloat && n>=cutoff && maxiter>0 && preferred_algo===:multishift
+            return schur_multishift(A;maxiter,threaded,kwargs...)
+        else
+            algorithm=:standard
+        end
+    end
+    algorithm===:multishift && return schur_multishift(A;maxiter,threaded,kwargs...)
     algorithm===:standard && isempty(kwargs) || throw(ArgumentError("unknown Schur algorithm/options"))
     n=_square(A)
     maxiter isa Integer && maxiter>=0 || throw(ArgumentError("maxiter must be a nonnegative integer"))

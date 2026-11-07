@@ -315,3 +315,38 @@ Result of [`autotune_gemm`](@ref): the fastest validated `config`
 ([`GemmConfig`](@ref)), the `kernel`, the timings of all `candidates` and the
 machine (`cpu`) they were measured on.
 """ GemmTuning
+
+@doc raw"""
+    SpectralConfig(svd_algorithm, schur_algorithm, svd_bidiag_threshold, schur_multishift_threshold)
+
+Configuration settings for native spectral algorithms (SVD and Schur).
+Specifies the preferred algorithms and size crossover thresholds.
+""" SpectralConfig
+
+@doc raw"""
+    SpectralTuning
+
+Result of [`autotune_spectral`](@ref): the fastest validated [`SpectralConfig`](@ref),
+element type, dimension, timings and host machine signature (`cpu`).
+""" SpectralTuning
+
+@doc raw"""
+    autotune_spectral(::Type{T}, n=128; threaded=true, repeats=3) -> SpectralTuning
+
+Explicit, opt-in native spectral algorithm calibration (SVD and Schur).
+Runs timings for candidate algorithms on an `n × n` matrix; loading the package
+never calibrates or benchmarks. Numerical accuracy is checked before acceptance.
+""" autotune_spectral
+
+@doc raw"""
+    save_spectral_tuning(path::AbstractString, tuning::SpectralTuning) -> path
+
+Save an explicitly measured spectral configuration in a versioned text file.
+""" save_spectral_tuning
+
+@doc raw"""
+    load_spectral_tuning(::Type{T}, path::AbstractString) -> SpectralConfig
+
+Load spectral tuning only for the same CPU, Julia version, thread count and type.
+Activates the configuration for subsequent automatic spectral dispatch.
+""" load_spectral_tuning

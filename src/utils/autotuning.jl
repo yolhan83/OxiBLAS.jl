@@ -64,3 +64,149 @@ function load_gemm_tuning(::Type{T},path::AbstractString) where {T<:NativeFloat}
     config=GemmConfig(T;mc=c[1],kc=c[2],nc=c[3],parallel_threshold=c[4],small_threshold=c[5])
     (;config,kernel=kind,dimensions=Tuple(dims))
 end
+
+# ==== Spectral Autotuning (SVD & Schur) =========================================
+
+struct SpectralConfig
+    svd_algorithm::Symbol
+    schur_algorithm::Symbol
+    svd_bidiag_threshold::Int
+    schur_multishift_threshold::Int
+end
+
+struct SpectralTuning
+    config::SpectralConfig
+    element_type::String
+    dimension::Int
+    cpu::String
+    svd_timings_ns::Dict{Symbol,Float64}
+    schur_timings_ns::Dict{Symbol,Float64}
+end
+
+const _ACTIVE_SPECTRAL_TUNING = Dict{DataType,SpectralConfig}()
+
+function get_spectral_config(::Type{T}) where T
+    get(_ACTIVE_SPECTRAL_TUNING, T, nothing)
+end
+
+function set_spectral_tuning!(tuning::SpectralTuning)
+    T = eval(Meta.parse(tuning.element_type))
+    _ACTIVE_SPECTRAL_TUNING[T] = tuning.config
+    tuning
+end
+
+function clear_spectral_tuning!()
+    empty!(_ACTIVE_SPECTRAL_TUNING)
+end
+
+"""Explicit, opt-in native spectral algorithm calibration (SVD and Schur).
+Runs timings for candidate algorithms on an n × n matrix; loading the package
+never calibrates or benchmarks. Candidate results are checked numerically before acceptance.
+"""
+function autotune_spectral(::Type{T}, n::Integer=128; threaded::Bool=true, repeats::Integer=3) where {T<:NativeFloat}
+    n > 0 && repeats > 0 || throw(ArgumentError("invalid spectral tuning dimension/options"))
+    
+    # 1. SVD Calibration
+    A = Matrix{T}(undef, n, n)
+    for i in eachindex(A)
+        A[i] = T((mod(17i, 101) - 50) / 101)
+    end
+    
+    svd_cands = (:golub_kahan, :jacobi, :divide_conquer)
+    svd_timings = Dict{Symbol,Float64}()
+    
+    for algo in svd_cands
+        try
+            F = svd_bidiagonal(copy(A); algorithm=algo, threaded)
+            tol = 64eps(real(T)) * sqrt(real(T)(n))
+            err = norm(F.U * _LA.Diagonal(F.S) * F.Vt - A) / max(norm(A), floatmin(real(T)))
+            err <= tol || continue
+            
+            samples = Float64[]
+            for _ in 1:repeats
+                start = time_ns()
+                svd_bidiagonal(copy(A); algorithm=algo, threaded)
+                push!(samples, Float64(time_ns() - start))
+            end
+            sort!(samples)
+            svd_timings[algo] = samples[cld(repeats, 2)]
+        catch
+        end
+    end
+    
+    best_svd = isempty(svd_timings) ? :golub_kahan : argmin(svd_timings)
+    
+    # 2. Schur Calibration
+    schur_cands = (:standard, :multishift)
+    schur_timings = Dict{Symbol,Float64}()
+    
+    for algo in schur_cands
+        try
+            F = if algo === :multishift
+                schur_multishift(copy(A); threaded)
+            else
+                schur_factor(copy(A); algorithm=:standard, threaded)
+            end
+            tol = 64eps(real(T)) * max(1, n)
+            err = norm(F.Z * F.T * adjoint(F.Z) - A) / max(norm(A), floatmin(real(T)))
+            err <= tol || continue
+            
+            samples = Float64[]
+            for _ in 1:repeats
+                start = time_ns()
+                if algo === :multishift
+                    schur_multishift(copy(A); threaded)
+                else
+                    schur_factor(copy(A); algorithm=:standard, threaded)
+                end
+                push!(samples, Float64(time_ns() - start))
+            end
+            sort!(samples)
+            schur_timings[algo] = samples[cld(repeats, 2)]
+        catch
+        end
+    end
+    
+    best_schur = isempty(schur_timings) ? (n >= 192 ? :multishift : :standard) : argmin(schur_timings)
+    
+    svd_cutoff = (T <: Complex) ? 4 : 8
+    schur_cutoff = (T <: Complex) ? 192 : 256
+    
+    config = SpectralConfig(best_svd, best_schur, svd_cutoff, schur_cutoff)
+    tuning = SpectralTuning(config, string(T), Int(n), _tuning_cpu(), svd_timings, schur_timings)
+    set_spectral_tuning!(tuning)
+    tuning
+end
+
+"""Save an explicitly measured spectral configuration in a simple versioned text file."""
+function save_spectral_tuning(path::AbstractString, tuning::SpectralTuning)
+    open(path, "w") do io
+        println(io, "OxiBLAS spectral tuning 1")
+        println(io, tuning.cpu)
+        println(io, tuning.element_type)
+        println(io, tuning.dimension)
+        c = tuning.config
+        println(io, join((c.svd_algorithm, c.schur_algorithm, c.svd_bidiag_threshold, c.schur_multishift_threshold), ','))
+    end
+    path
+end
+
+"""Load spectral tuning only for the same CPU, Julia version, thread count and type.
+Returns the SpectralConfig and activates it for automatic spectral dispatch.
+"""
+function load_spectral_tuning(::Type{T}, path::AbstractString) where {T<:NativeFloat}
+    lines = readlines(path)
+    length(lines) == 5 && lines[1] == "OxiBLAS spectral tuning 1" || throw(ArgumentError("invalid spectral tuning file"))
+    lines[2] == _tuning_cpu() && lines[3] == string(T) || throw(ArgumentError("spectral tuning environment differs"))
+    dim = parse(Int, lines[4])
+    parts = split(lines[5], ',')
+    length(parts) == 4 || throw(ArgumentError("invalid spectral tuning parameters"))
+    svd_algo = Symbol(parts[1])
+    schur_algo = Symbol(parts[2])
+    svd_thresh = parse(Int, parts[3])
+    schur_thresh = parse(Int, parts[4])
+    config = SpectralConfig(svd_algo, schur_algo, svd_thresh, schur_thresh)
+    tuning = SpectralTuning(config, string(T), dim, _tuning_cpu(), Dict{Symbol,Float64}(), Dict{Symbol,Float64}())
+    set_spectral_tuning!(tuning)
+    config
+end

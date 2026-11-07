@@ -128,4 +128,21 @@ end
         @test loaded.dimensions==(3,4,5) && loaded.kernel===:scalar
         @test_throws ArgumentError load_gemm_tuning(Float32,path)
     end
+
+    # Spectral tuning format persistence and autotune check
+    scfg=SpectralConfig(:golub_kahan,:multishift,8,192)
+    sfixture=SpectralTuning(scfg,"Float64",16,OxiBLAS._tuning_cpu(),Dict{Symbol,Float64}(),Dict{Symbol,Float64}())
+    mktemp() do path,io
+        close(io); save_spectral_tuning(path,sfixture)
+        sloaded=load_spectral_tuning(Float64,path)
+        @test sloaded.svd_algorithm===:golub_kahan && sloaded.schur_algorithm===:multishift
+        @test sloaded.svd_bidiag_threshold==8 && sloaded.schur_multishift_threshold==192
+        @test_throws ArgumentError load_spectral_tuning(Float32,path)
+    end
+
+    # Explicit autotune execution on small size
+    tune = autotune_spectral(Float32, 16; repeats=1)
+    @test tune.config.svd_algorithm in (:golub_kahan, :jacobi, :divide_conquer)
+    @test tune.config.schur_algorithm in (:standard, :multishift)
+    OxiBLAS.clear_spectral_tuning!()
 end

@@ -45,18 +45,27 @@ norm(A * x - b) / norm(b)
 | Function | Result |
 |---|---|
 | [`hessenberg_factor`](@ref), [`hessenberg_q`](@ref), [`apply_hessenberg_q!`](@ref) | Hessenberg reduction |
-| [`schur_factor`](@ref), [`schur_multishift`](@ref), [`eigenvalues`](@ref), [`eigen_general`](@ref) | Schur (shifted QR), general eigenvalues and eigenvectors |
+| [`schur_factor`](@ref), [`schur_multishift`](@ref), [`eigenvalues`](@ref), [`eigen_general`](@ref) | Schur (shifted QR or multishift blocked AED with `algorithm=:auto`), general eigenvalues and eigenvectors |
 | [`schur_reorder`](@ref), [`schur_eigenvectors`](@ref), [`trevc_right`](@ref), [`trevc_left`](@ref), [`trsna_s`](@ref), [`trsna_sep`](@ref), [`schur_condition`](@ref) | reordering, vectors, conditioning |
 | [`tridiagonal_factor`](@ref), [`eigen_tridiagonal`](@ref), [`eigen_tridiagonal_dc`](@ref), [`eigen_tridiagonal_mrrr`](@ref) | Hermitian tridiagonal (implicit QR, divide and conquer, MRRR) |
 | [`eigen_hermitian`](@ref), [`eigen_hermitian_dc`](@ref), [`eigen_hermitian_mrrr`](@ref), [`eigen_generalized`](@ref) | standard and generalized Hermitian problems |
 | [`qz_factor`](@ref), [`eigen_pencil`](@ref), [`qz_reorder`](@ref), [`qz_condition`](@ref), [`generalized_sylvester`](@ref) | matrix pencils (real or complex QZ) |
-| `svd_factor(A; algorithm)`, [`singular_values`](@ref) | SVD: one-sided Jacobi (default) or `:golub_kahan` |
+| `svd_factor(A; algorithm)`, [`singular_values`](@ref) | SVD: dynamic selection with `algorithm=:auto` (default), `:golub_kahan`, `:divide_conquer`, or `:jacobi` |
 | [`svd_bidiagonal`](@ref), [`svd_divide_conquer`](@ref), [`svd_truncated`](@ref), [`svd_selected`](@ref), [`svd_randomized`](@ref) | variants and partial SVDs |
 | [`bidiagonal_factor`](@ref), [`balance_matrix`](@ref), [`balance_backtransform`](@ref) | auxiliary reductions |
+| [`SpectralConfig`](@ref), [`SpectralTuning`](@ref), [`autotune_spectral`](@ref), [`save_spectral_tuning`](@ref), [`load_spectral_tuning`](@ref) | empirical autotuning and persistence for spectral algorithms |
 
-**SVD.** The default Jacobi guarantees relative accuracy on small singular
-values, at several times the cost of `gesdd`. `algorithm=:golub_kahan` is the
-fast path (see the high-level suite in [Performance](performance.md)).
+**SVD & Schur Dispatching.** By default, `svd_factor(A; algorithm=:auto)` and
+`schur_factor(A; algorithm=:auto)` choose the optimal computational kernel based on matrix
+dimension, element type, and active hardware calibration:
+- For SVD, native floats automatically leverage `svd_bidiagonal(algorithm=:golub_kahan)`
+  combining SIMD Householder reductions with L1-cache fused Givens rotations, delivering
+  substantial speedups over one-sided Jacobi while guaranteeing orthogonal fidelity.
+- For Schur decompositions, matrices with $N \ge 192$ (complex) or $N \ge 256$ (real)
+  route to `schur_multishift` with Aggressive Early Deflation (AED) and multithreaded GEMM
+  accumulations.
+- Users can run machine-specific calibration with [`autotune_spectral`](@ref) and persist
+  results with [`save_spectral_tuning`](@ref) and [`load_spectral_tuning`](@ref).
 
 ## Matrix functions
 
