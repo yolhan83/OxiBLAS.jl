@@ -150,6 +150,7 @@ function run_case(c::Case,timing::Bool)
     if ref===nothing
         note=no_suitesparse(c) ? "no reference: SuiteSparse has no $(eltype_label(c.T))" :
              no_lapack_sylvester(c) ? "no reference: LinearAlgebra.$(c.op.name) requires LAPACK trsyl!" :
+             (c.op.name == "factorize" && c.kind in (:upper, :lower, :diagonal, :bidiagonal)) ? "no reference: LinearAlgebra.factorize is a no-op identity" :
              (c.op.name == "norm" && c.kind === :tridiagonal) ? "no reference: LinearAlgebra has no specialized norm for Tridiagonal" : "no reference"
     else
         try

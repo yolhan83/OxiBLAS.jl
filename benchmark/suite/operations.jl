@@ -73,6 +73,13 @@ trsm_case(A,R,T,N,r)=(B=rnd(r,T,N,N); X=similar(B); Y=similar(B); U=parent(A);
 
 # ---- factorizations -------------------------------------------------------
 factor(f,g)=(A,R,T,N,r)->(b=rhs(r,T,R); (()->f(A), ()->g(R), (Fo,Fr)->solves(R,Fo\b,b,T,N)))
+function factorize_case(A,R,T,N,r)
+    b=rhs(r,T,R)
+    # LinearAlgebra.factorize is a no-op identity (F === R) on triangular, diagonal, and bidiagonal.
+    is_noop = R isa Union{LA.UpperTriangular, LA.LowerTriangular, LA.Diagonal, LA.Bidiagonal}
+    g = is_noop ? nothing : () -> LA.factorize(R)
+    (()->O.factorize(A), g, (Fo,_)->solves(R,Fo\b,b,T,N))
+end
 lu_inplace(A,R,T,N,r)=(b=rhs(r,T,R); W=similar(A); W2=similar(R);
     (()->(copyto!(W,A); O.lu!(W)), ()->(copyto!(W2,R); LA.lu!(W2)), (Fo,Fr)->solves(R,Fo\b,b,T,N)))
 cholesky_inplace(A,R,T,N,r)=(b=rhs(r,T,R); P=parent(A); W=similar(P); W2=similar(P);
@@ -206,7 +213,7 @@ const OPS=[
     Op("qr_colnorm","factorizations","allocating",O.qr,[:dense,:tall],:cubic,factor(A->O.qr(A,LA.ColumnNorm()),R->LA.qr(R,LA.ColumnNorm()))),
     Op("qr!","factorizations","in-place",O.qr!,[:dense],:cubic,qr_inplace),
     Op("lq","factorizations","allocating",O.lq,[:dense],:cubic,factor(O.lq,LA.lq)),
-    Op("factorize","factorizations","allocating",O.factorize,SOLVE_KINDS,:cubic,factor(O.factorize,LA.factorize)),
+    Op("factorize","factorizations","allocating",O.factorize,SOLVE_KINDS,:cubic,factorize_case),
     # solves
     Op("ldiv","solves","allocating",O.ldiv,SOLVE_KINDS,:cubic,ldiv_alloc(0)),
     Op("ldiv_8rhs","solves","allocating",O.ldiv,[:dense,:hermitian,:tridiagonal,:banded,:packed,:sparse,:csr,:sparse_spd],:cubic,ldiv_alloc(8)),
