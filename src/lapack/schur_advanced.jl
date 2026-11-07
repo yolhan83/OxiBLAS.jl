@@ -26,9 +26,15 @@ function schur_reorder(F::SchurFactor{T},select::Function) where {T<:Complex}
     SchurFactor(A,Z,[A[i,i] for i in 1:n],F.iterations)
 end
 
-"""General eigenvectors via the real Francis / complex Wilkinson Schur path
-and block TREVC back/forward substitution. Real 2x2 blocks are preserved during
-factorization; the returned eigenvectors have one complex column per eigenvalue.
+"""
+    eigen_general(A; algorithm=:auto, threaded=true, balance=false, left=false, maxiter=...) -> NamedTuple
+
+General eigenvalues and eigenvectors via the Schur path and block TREVC substitution:
+`(; values, vectors, left_vectors, schur, balancing)`.
+
+Real 2×2 blocks are preserved during factorization; the returned eigenvectors have one
+complex column per eigenvalue. `algorithm=:auto` selects between standard and multishift
+Schur decomposition. `balance=true` preconditions the matrix via diagonal similarity.
 """
 function eigen_general(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),threaded=true,balance=false,left=false,algorithm=:auto) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)

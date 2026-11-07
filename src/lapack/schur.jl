@@ -187,14 +187,19 @@ end
 _schur_values(H::AbstractMatrix{T},scale) where {T<:Complex}=[H[i,i]*scale for i in axes(H,1)]
 
 """
-    schur_factor(A;maxiter=100*max(1,size(A,1)))
+    schur_factor(A; algorithm=:auto, threaded=true, maxiter=100*max(1,size(A,1)), kwargs...) -> SchurFactor
 
-Native Schur decomposition A=Z*T*Z'. Real inputs use Francis double-shift
-bulge chasing and return real quasi-triangular T (1x1/2x2 blocks); complex
-inputs use implicit single-shift QR and triangular T. Eigenvalues are complex.
-Finite input is scaled before reduction. Failure to converge throws
-ConvergenceError, including the remaining active block and iteration count.
-No balancing, reordering or eigenvector back substitution is performed.
+Native Schur decomposition `A = Z·T·Zᴴ`.
+
+- `algorithm=:auto` (default): dynamically chooses between shifted QR and multishift
+  BLAS-3 based on matrix dimension and active [`SpectralConfig`](@ref). For native
+  floats, matrices with `n >= 192` (complex) or `n >= 256` (real) route to
+  [`schur_multishift`](@ref).
+- `algorithm=:standard`: Francis double-shift bulge chasing for real inputs (returning
+  real quasi-triangular `T` with 1×1 and 2×2 blocks) and implicit single-shift QR
+  for complex inputs.
+- `algorithm=:multishift`: multi-shift QR with Aggressive Early Deflation (AED) and
+  blocked GEMM accumulations across threads.
 """
 function schur_factor(A::AbstractMatrix{T};maxiter=100max(1,size(A,1)),algorithm=:auto,threaded=true,kwargs...) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)

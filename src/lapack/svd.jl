@@ -99,18 +99,21 @@ function _complete_svd_column!(U,col,scratch)
 end
 
 """
-    svd_factor(A;vectors=true,maxsweeps=100,rtol=8eps(real(eltype(A)))*sqrt(min(size(A)...)))
+    svd_factor(A; vectors=true, algorithm=:auto, full=false, threaded=true, maxsweeps=100, rtol=...) -> SVDFactor
 
-Economy SVD A=U*Diagonal(S)*Vt, sorted descending, for real/complex rectangular
-matrices, including empty and rank-deficient inputs. Native one-sided cyclic
-Jacobi; never forms the full Gram matrix. Wide matrices are handled through
-their adjoints. Column norms and normalized correlations protect graded inputs.
-Correlated columns at the working type's underflow floor are deflated to zero;
-orthogonal tiny columns are retained.
-vectors=false returns U=Vt=nothing. Nonconvergence throws ConvergenceError.
-`full=true` completes the null spaces. `algorithm=:parallel_jacobi` selects
-disjoint column rounds; `:golub_kahan` and `:divide_conquer` use the bidiagonal
-entry point.
+Singular value decomposition `A = U·Diagonal(S)·Vt` for real or complex matrices,
+sorted descending, including empty, wide, tall and rank-deficient inputs.
+
+- `algorithm=:auto` (default): dynamically selects the fastest validated algorithm.
+  For native floats (`Float32`, `Float64`, `ComplexF32`, `ComplexF64`), routes to
+  `svd_bidiagonal(algorithm=:golub_kahan)` when `min(m, n) >= 4` (complex) or `8` (real),
+  or follows the active [`SpectralConfig`](@ref) / [`SpectralTuning`](@ref).
+- `algorithm=:golub_kahan`: implicitly shifted bidiagonal QR with L1/L2 cache-resident Givens tiles.
+- `algorithm=:divide_conquer`: bidiagonal divide-and-conquer solver (LAPACK `gesdd` scheme).
+- `algorithm=:jacobi`: native one-sided cyclic Jacobi; never forms the full Gram matrix.
+- `algorithm=:parallel_jacobi`: parallel disjoint column rotations.
+- `vectors=false`: computes singular values only (`U` and `Vt` are `nothing`).
+- `full=true`: computes square unitary matrices completing the null spaces.
 """
 function svd_factor(A::AbstractMatrix{T};vectors=true,maxsweeps=100,algorithm=:auto,full=false,threaded=true,
                     rtol=8eps(real(T))*sqrt(real(T)(max(1,min(size(A)...)))),kwargs...) where {T<:GenericFloat}

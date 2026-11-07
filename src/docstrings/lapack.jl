@@ -416,8 +416,8 @@ of the original matrix (LAPACK `gebak`). `left=true` for left eigenvectors.
     singular_values(A; kwargs...) -> Vector
 
 Singular values only, in decreasing order (no vectors computed); keywords as
-[`svd_factor`](@ref) (`algorithm=:jacobi` by default, `:golub_kahan`,
-`:divide_conquer`).
+[`svd_factor`](@ref) (`algorithm=:auto` by default, `:golub_kahan`,
+`:divide_conquer`, `:jacobi`).
 """ singular_values
 
 @doc raw"""
