@@ -55,7 +55,10 @@ EinsumPlan(spec,shapes,labels,out,dims,steps,limit,peak,direct,T,model)=
 EinsumPlan(spec,shapes,labels,out,dims,steps,limit,peak,direct,T,model,cost,weight,layouts)=
     EinsumPlan(spec,shapes,labels,out,dims,steps,limit,peak,direct,T,model,cost,weight,layouts,fill(false,length(labels)),zeros(Int,length(labels)))
 
-"""Reusable tensor-intermediate buffers, protected for concurrent callers.
+"""
+    EinsumWorkspace(::Type{T}=Float64)
+
+Reusable tensor-intermediate buffers, protected for concurrent callers.
 An execution leases separate buffers for simultaneously live intermediates.
 Returned arrays never expose these buffers; einsum! also reuses its result
 scratch. Packing/index metadata may still allocate. Retained capacity is not
@@ -194,7 +197,10 @@ function _einsum_steps(labels,output,dimensions,optimize,element_bytes,memory_li
     steps,peak,length(labels)==1
 end
 
-"""Build a reusable shape-checked contraction plan. Supports ellipsis broadcasting,
+"""
+    plan_einsum(specification, arrays...; optimize=:greedy, memory_limit=nothing, kwargs...) -> EinsumPlan
+
+Build a reusable shape-checked contraction plan. Supports ellipsis broadcasting,
 repeated labels (diagonals/traces), scalar outputs, reductions, and any operand count.
 Greedy planning minimizes local pair work, then intermediate size. `:beam`
 keeps bounded-width candidate paths; `:optimal` exhaustively minimizes modeled
@@ -643,7 +649,10 @@ function _einsum_compute(plan::EinsumPlan,arrays;threaded=true,allocator=nothing
     _einsum_direct((data[1],),(ls[1],),plan.output,plan.dimensions,T;threaded,allocator=final_allocator)
 end
 
-"""Einstein summation on Julia arrays. Complex values are multiplied without
+"""
+    einsum(plan::EinsumPlan, arrays...; workspace=nothing, kwargs...)
+
+Einstein summation on Julia arrays. Complex values are multiplied without
 implicit conjugation. Scalar expressions return a zero-dimensional Array.
 Operands may be sparse (SparseTensor, SparseMatrixCSC, SparseVector, OxiBLAS
 sparse formats, and their transposes/adjoints): they are contracted without
@@ -779,7 +788,11 @@ function contract!(C::AbstractArray{T},A::AbstractArray{T},B::AbstractArray{T},a
 end
 outer_product(A::AbstractArray,B::AbstractArray;kwargs...)=contract(A,B,(),();kwargs...)
 
-"""Multiply mode `mode` by U (new dimension × old dimension)."""
+"""
+    mode_product(A, U, mode; kwargs...)
+
+Multiply mode `mode` by U (new dimension × old dimension).
+"""
 function mode_product(A::AbstractArray,U::AbstractMatrix,mode::Integer;kwargs...)
     1<=mode<=ndims(A) || throw(ArgumentError("mode out of range"))
     C=contract(U,A,(2,),(mode,);kwargs...)
@@ -792,7 +805,11 @@ struct TuckerFactor{T,N}
     core::Array{T,N}
     factors::Vector{Matrix{T}}
 end
-"""Truncated higher-order SVD, using the native one-sided Jacobi SVD."""
+"""
+    hosvd(A; ranks=nothing, kwargs...) -> TuckerFactor
+
+Truncated higher-order SVD, using the native one-sided Jacobi SVD.
+"""
 function hosvd(A::AbstractArray{T,N};ranks=nothing,kwargs...) where {T<:GenericFloat,N}
     ranks===nothing && (ranks=ntuple(d->min(size(A,d),prod((size(A,k) for k in 1:N if k!=d);init=1)),N))
     length(ranks)==N || throw(DimensionMismatch("one Tucker rank per mode is required"))
@@ -824,7 +841,10 @@ struct TensorTrainFactor{T}
     cores::Vector{Array{T,3}}
     shape::Tuple
 end
-"""Sequential TT-SVD. `maxrank` caps each bond; `rtol` bounds the discarded
+"""
+    tensor_train(A; maxrank=typemax(Int), rtol=0, kwargs...) -> TensorTrainFactor
+
+Sequential TT-SVD. `maxrank` caps each bond; `rtol` bounds the discarded
 Frobenius norm per split by rtol*norm(A)/sqrt(N-1).
 """
 function tensor_train(A::AbstractArray{T,N};maxrank=typemax(Int),rtol=zero(real(T)),kwargs...) where {T<:GenericFloat,N}
@@ -876,7 +896,10 @@ function reconstruct(F::CPFactor{T}) where T
     A
 end
 
-"""CANDECOMP/PARAFAC by alternating least squares with native MTTKRP/GEMM
+"""
+    cp_als(A, rank; initial=nothing, maxiter=100, rtol=..., kwargs...) -> CPFactor
+
+CANDECOMP/PARAFAC by alternating least squares with native MTTKRP/GEMM
 and LU solves. Real and complex arrays are supported. `initial` can provide
 factors; otherwise deterministic, nonrandom factors are used. Convergence and
 stagnation are reported separately from the attained approximation error.
@@ -957,7 +980,10 @@ function cp_als(A::AbstractArray{T,N},rank::Integer;initial=nothing,maxiter=100,
     CPFactor(weights,factors,iterations,error,reason===:converged,reason)
 end
 
-"""N-D batched matrix multiplication: dimensions 1/2 are matrix dimensions;
+"""
+    batched_matmul(A, B; transA=:N, transB=:N, kwargs...)
+
+N-D batched matrix multiplication: dimensions 1/2 are matrix dimensions;
 remaining dimensions broadcast independently (including singleton batch axes).
 """
 function batched_matmul(A::AbstractArray{T},B::AbstractArray{T};transA=:N,transB=:N,kwargs...) where {T<:GenericFloat}

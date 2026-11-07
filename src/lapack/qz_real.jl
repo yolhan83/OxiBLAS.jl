@@ -130,7 +130,10 @@ function _qz_real_finish!(H,B,Q,Z,i,pairs)
     H[i+1,i]=zero(eltype(H)); B[i+1,i]=zero(eltype(B))
 end
 
-"""Generalized Schur A=Q*S*Z', B=Q*T*Z'. Real input returns real S with
+"""
+    qz_factor(A::AbstractMatrix{T}, B::AbstractMatrix{T}; form=:real, maxiter=..., rtol=...) -> GeneralizedSchurFactor
+
+Generalized Schur A=Q*S*Z', B=Q*T*Z'. Real input returns real S with
 isolated 1x1/2x2 blocks and triangular T; complex input returns triangular S/T.
 `form=:complex` explicitly requests the complex path for real input.
 Homogeneous alpha/beta pairs include infinite and indeterminate eigenvalues.

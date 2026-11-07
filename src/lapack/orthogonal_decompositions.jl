@@ -9,18 +9,30 @@ function Base.getproperty(F::OrthogonalFactor,s::Symbol)
     s in (:L,:R) && return getfield(F,:triangular)
     getfield(F,s)
 end
-"""Householder LQ: A=L*Q, using native QR of A'."""
+"""
+    lq_factor(A::AbstractMatrix{T}; kwargs...) -> OrthogonalFactor
+
+Householder LQ: A=L*Q, using native QR of A'.
+"""
 function lq_factor(A::AbstractMatrix{T};kwargs...) where {T<:GenericFloat}
     F=qr_factor(adjoint(A);kwargs...)
     OrthogonalFactor(Matrix(adjoint(F.R)),Matrix(adjoint(F.Q)),:LQ)
 end
-"""Householder QL: A=Q*L, lower trapezoid anchored at the lower right."""
+"""
+    ql_factor(A::AbstractMatrix{T}; kwargs...) -> OrthogonalFactor
+
+Householder QL: A=Q*L, lower trapezoid anchored at the lower right.
+"""
 function ql_factor(A::AbstractMatrix{T};kwargs...) where {T<:GenericFloat}
     Base.require_one_based_indexing(A)
     F=qr_factor(reverse(A;dims=(1,2));kwargs...)
     OrthogonalFactor(reverse(F.R;dims=(1,2)),reverse(F.Q;dims=(1,2)),:QL)
 end
-"""Householder RQ: A=R*Q, upper trapezoid anchored at the upper right."""
+"""
+    rq_factor(A::AbstractMatrix{T}; kwargs...) -> OrthogonalFactor
+
+Householder RQ: A=R*Q, upper trapezoid anchored at the upper right.
+"""
 function rq_factor(A::AbstractMatrix{T};kwargs...) where {T<:GenericFloat}
     F=ql_factor(adjoint(A);kwargs...)
     OrthogonalFactor(Matrix(adjoint(F.L)),Matrix(adjoint(F.Q)),:RQ)
@@ -34,7 +46,10 @@ struct CompleteOrthogonalFactor{T}
     rank::Int
     shape::Tuple{Int,Int}
 end
-"""Rank-revealing complete orthogonal decomposition:
+"""
+    complete_orthogonal(A::AbstractMatrix{T}; rtol=eps(real(T))*max(size(A)...), threaded=true) -> CompleteOrthogonalFactor
+
+Rank-revealing complete orthogonal decomposition:
 A[:,p]=Q[:,1:r]*triangular*Z[1:r,:]. The middle factor is lower triangular.
 Uses pivoted QR followed by LQ, and supports minimum-norm least squares.
 """
@@ -65,7 +80,10 @@ function solve(F::CompleteOrthogonalFactor,b::AbstractVecOrMat{T}) where T
 end
 least_squares(F::CompleteOrthogonalFactor,b::AbstractVecOrMat)=solve(F,b)
 
-"""Apply a stored Householder Q on the left/right, with N/T/C semantics.
+"""
+    apply_q!(B::AbstractMatrix{T}, F::QRFactor{T}; side=:L, trans=:N, threaded=true, parallel_threshold=262144, blocksize=nothing) -> AbstractMatrix{T}
+
+Apply a stored Householder Q on the left/right, with N/T/C semantics.
 Aliased factor storage is snapshotted before changing the output.
 """
 function apply_q!(B::AbstractMatrix{T},F::QRFactor{T};side=:L,trans=:N,threaded=true,parallel_threshold=262144,blocksize=nothing) where {T<:GenericFloat}
@@ -181,7 +199,11 @@ function _apply_q_unblocked!(B,ff,left,forward,threaded,parallel_threshold)
 end
 apply_q!(B,F::PivotedQRFactor;kwargs...)=apply_q!(B,F.qr;kwargs...)
 
-"""Materialize selected leading columns of Q without allocating the full Q."""
+"""
+    qr_q(F::QRFactor{T}; columns=min(size(F.factors)...), threaded=true, blocksize=nothing) -> Matrix{T}
+
+Materialize selected leading columns of Q without allocating the full Q.
+"""
 function qr_q(F::QRFactor{T};columns=min(size(F.factors)...),threaded=true,blocksize=nothing) where T
     m=size(F.factors,1); 0<=columns<=m || throw(ArgumentError("invalid Q column count"))
     blocksize=_qr_apply_blocksize(m,blocksize)

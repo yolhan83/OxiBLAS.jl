@@ -21,7 +21,10 @@ function _native_mv!(y,D::_SVDHermitianDilation,x)
     _block_apply!(reshape(y,:,1),D,reshape(xx,:,1)); y
 end
 
-"""Iterative sparse singular triplets through the Hermitian dilation [0 A; A' 0].
+"""
+    _sparse_svd_dilation(A, rank; subspace=..., blocksize=..., kwargs...)
+
+Iterative sparse singular triplets through the Hermitian dilation [0 A; A' 0].
 Uses thick-restarted block Lanczos and native small Hermitian eigensolvers.
 Neither A nor A'*A is formed densely. The Krylov basis has m+n rows, a memory
 tradeoff versus specialized Golub–Kahan. Only positive singular triplets are

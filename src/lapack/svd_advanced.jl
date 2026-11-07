@@ -463,7 +463,10 @@ function _full_svd(F::SVDFactor{T},m,n) where T
     SVDFactor(U,F.S,Matrix(adjoint(V)),F.sweeps)
 end
 
-"""SVD through two-sided Householder reduction and bidiagonal Golub–Kahan QR.
+"""
+    svd_bidiagonal(A::AbstractMatrix{T}; algorithm=:golub_kahan, vectors=true, full=false, maxiter=..., rtol=..., leafsize=16, threaded=true) -> SVDFactor
+
+SVD through two-sided Householder reduction and bidiagonal Golub–Kahan QR.
 `algorithm=:divide_conquer` instead solves the symmetric bidiagonal dilation by
 Cuppen recursion and secular merges; no A'A is formed. Real/complex, tall/wide,
 values-only and full null-space options are supported.
@@ -528,7 +531,10 @@ function svd_bidiagonal(A::AbstractMatrix{T};algorithm=:golub_kahan,vectors=true
 end
 svd_divide_conquer(A;kwargs...)=svd_bidiagonal(A;algorithm=:divide_conquer,kwargs...)
 
-"""Leading-rank SVD. The default uses genuine selected bisection/inverse
+"""
+    svd_truncated(A::AbstractMatrix{T}, rank::Integer; algorithm=:selected, kwargs...) -> SVDFactor
+
+Leading-rank SVD. The default uses genuine selected bisection/inverse
 iteration. Explicit :golub_kahan/:divide_conquer retain the full-spectrum paths.
 """
 function svd_truncated(A::AbstractMatrix{T},rank::Integer;algorithm=:selected,kwargs...) where {T<:GenericFloat}
@@ -557,7 +563,10 @@ function _random_projection(::Type{T},m,n,seed) where T
     end
     Q
 end
-"""Randomized range-finder SVD with explicit local seed and reorthogonalized
+"""
+    svd_randomized(A::AbstractMatrix{T}, rank::Integer; oversampling=8, power_iterations=2, seed=0x0b1a5, threaded=true, kwargs...) -> SVDFactor
+
+Randomized range-finder SVD with explicit local seed and reorthogonalized
 power steps. Intended for low target rank; residual quality is caller-controlled.
 """
 function svd_randomized(A::AbstractMatrix{T},rank::Integer;oversampling=8,power_iterations=2,seed=0x0b1a5,threaded=true,kwargs...) where {T<:GenericFloat}

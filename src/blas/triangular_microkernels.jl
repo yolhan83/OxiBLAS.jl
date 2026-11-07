@@ -4,7 +4,10 @@
 _trmm_leaf!(B,A,alpha,left,upper,unit;kernel=:auto,optimized=true)=_trmm_leaf_generic!(B,A,alpha,left,upper,unit)
 _trsm_leaf!(B,A,left,upper,unit;kernel=:auto,optimized=true)=_trsm_leaf_generic!(B,A,left,upper,unit)
 
-"""Reusable native TRMM/TRSM packing context for an m-by-n output. Construct
+"""
+    triangular_workspace(::Type{T}, m, n; side=:L, config=GemmConfig(T), workers=...)
+
+Reusable native TRMM/TRSM packing context for an m-by-n output. Construct
 once for a fixed side/configuration; pass as `workspace` with the same config.
 The scalar/generic fallback requires no packing context.
 """

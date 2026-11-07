@@ -308,8 +308,12 @@ end
 
 # ---- elimination tree, postorder, factor structure ------------------------------
 
-"""Elimination tree of the symmetric pattern given by its upper part in
-1-based CSC (parent[j] = 0 for a root), path compression (cs_etree)."""
+"""
+    _etree(colptr, rowind, n) -> Vector{Int}
+
+Elimination tree of the symmetric pattern given by its upper part in
+1-based CSC (parent[j] = 0 for a root), path compression (cs_etree).
+"""
 function _etree(colptr,rowind,n)
     parent=zeros(Int,n); ancestor=zeros(Int,n)
     @inbounds for k in 1:n, p in colptr[k]:colptr[k+1]-1
@@ -363,11 +367,15 @@ function _postorder(parent,weight=nothing)
     end
     post
 end
-"""Row structure of each column of the Cholesky factor of the symmetric
+"""
+    _factor_columns(colptr, rowind, parent, n) -> Tuple{Vector{Int}, Vector{Int}}
+
+Row structure of each column of the Cholesky factor of the symmetric
 pattern (1-based CSC, both triangles): row k of L is the union of the paths
 of the elimination tree from each i < k with a_ik ≠ 0 up to k (row subtree,
 cs_ereach). Counting pass, then fill pass: rows arrive in increasing order,
-so each column [j; rows > j] is sorted without a sort."""
+so each column [j; rows > j] is sorted without a sort.
+"""
 function _factor_columns(colptr,rowind,parent,n)
     counts=ones(Int,n); flag=zeros(Int,n)
     @inbounds for k in 1:n

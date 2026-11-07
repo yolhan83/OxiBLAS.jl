@@ -141,7 +141,10 @@ function _qz_infinite!(A,B,Q,Z,lo,hi,j)
     lo<hi && _qz_reduce!(A,B,Q,Z,lo+1,hi)
 end
 
-"""Complex generalized Schur decomposition of a real or complex matrix pencil.
+"""
+    _qz_complex_factor(A::AbstractMatrix{T}, B::AbstractMatrix{T}; maxiter=..., rtol=...) -> GeneralizedSchurFactor
+
+Complex generalized Schur decomposition of a real or complex matrix pencil.
 A=Q*S*Z', B=Q*T*Z', with S/T triangular and Q/Z unitary. Eigenvalues are
 represented by homogeneous alpha/beta pairs, including beta=0 (infinity) and
 alpha=beta=0 (indeterminate singular pencil). No inverse of B is formed.

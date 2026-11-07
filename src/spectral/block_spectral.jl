@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Native block Krylov projections; upstream eigenvalue/block.rs and thick_restart.rs.
-"""Block Krylov projection, with variable-width blocks after rank deflation.
+"""
+    BlockKrylovFactor{T}
+
+Block Krylov projection, with variable-width blocks after rank deflation.
 Approximately A*basis = basis*projected + residual_basis*residual_coupling.
 `images` stores A*basis; the large operator is never converted to a dense matrix.
 For a Hermitian operator, the projection is block tridiagonal up to rounding
@@ -108,12 +111,19 @@ function _block_factor(A::AbstractMatrix{T};hermitian=false,blocksize::Integer=m
     BlockKrylovFactor(basis,images,projected,boundary,coupling,blocks,length(blocks),used,reason,hermitian)
 end
 
-"""Build a rank-deflating block Arnoldi projection; maxblocks counts blocks,
+"""
+    block_arnoldi_factor(A; kwargs...) -> BlockKrylovFactor
+
+Build a rank-deflating block Arnoldi projection; maxblocks counts blocks,
 subspace bounds stored basis columns. Initial columns may be dependent.
 The default factor reserves at most ten blocks, never n columns unconditionally.
 """
 block_arnoldi_factor(A::AbstractMatrix;kwargs...)=_block_factor(A;hermitian=false,kwargs...)
-"""Fully reorthogonalized Hermitian block Lanczos projection.
+
+"""
+    block_lanczos_factor(A; kwargs...) -> BlockKrylovFactor
+
+Fully reorthogonalized Hermitian block Lanczos projection.
 check_hermitian=false is a caller assertion, not an inferred property.
 """
 block_lanczos_factor(A::AbstractMatrix;kwargs...)=_block_factor(A;hermitian=true,kwargs...)
@@ -183,18 +193,28 @@ function _block_eigen(A::AbstractMatrix{T};hermitian=false,nev::Integer=1,
     A=_block_operator(A); F=_block_factor(A;hermitian,blocksize,maxblocks,subspace,threaded,kwargs...)
     result,_,_=_block_ritz(A,F,nev,which,target,rtol,atol;threaded); result
 end
-"""General block Arnoldi Ritz pairs, with true operator residuals.
+"""
+    block_arnoldi(A; restart=false, kwargs...)
+
+General block Arnoldi Ritz pairs, with true operator residuals.
 No restart is implied; rank loss shrinks blocks rather than launching scalar
 solvers. A converged residual does not certify globally extremal selection.
 Convergence requires norm(A*v-lambda*v)<=max(atol,rtol*abs(lambda)).
 """
 block_arnoldi(A::AbstractMatrix;restart=false,kwargs...)=restart ? thick_restart_arnoldi(A;kwargs...) : _block_eigen(A;hermitian=false,kwargs...)
-"""Hermitian block Lanczos Ritz pairs; algebraic, magnitude, bothends or closest
+
+"""
+    block_lanczos(A; kwargs...)
+
+Hermitian block Lanczos Ritz pairs; algebraic, magnitude, bothends or closest
 targets. Full reorthogonalization trades additional work/storage for robustness.
 """
 block_lanczos(A::AbstractMatrix;kwargs...)=_block_eigen(A;hermitian=true,kwargs...)
 
-"""Thick-restarted Hermitian block Krylov eigensolver.
+"""
+    thick_restart_lanczos(A; nev=1, subspace=..., keep=..., maxrestarts=30, kwargs...)
+
+Thick-restarted Hermitian block Krylov eigensolver.
 Retains `keep` Ritz vectors together with boundary residual directions, then
 expands the retained subspace with full reorthogonalization. Uses a full small
 Rayleigh–Ritz projection, not a short-recurrence tridiagonal after restarting.

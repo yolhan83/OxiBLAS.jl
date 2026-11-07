@@ -2,7 +2,10 @@
 # Hardware aliases NativeFloat/RealFloat remain deliberately closed in OxiBLAS.jl.
 const GenericFloat=Union{AbstractFloat,Complex{<:AbstractFloat}}
 
-"""Whether scalar arithmetic has a context safe to use in spawned kernel tasks.
+"""
+    generic_threadsafe(::Type{T}) -> Bool
+
+Whether scalar arithmetic has a context safe to use in spawned kernel tasks.
 Machine floats are enabled. Other providers conservatively execute kernels in
 one task, preserving the caller's arithmetic context (notably BigFloat precision).
 Providers may extend this OxiBLAS function explicitly; no Base method is needed.

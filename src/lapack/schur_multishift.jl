@@ -204,7 +204,10 @@ function _small_bulge_train!(H,Q,lo,hi,packets,w,blocksize,threaded)
     nothing
 end
 
-"""Native real/complex multishift Schur: aggressive early deflation, concurrent
+"""
+    schur_multishift(A::AbstractMatrix{T}; window=32, nshifts=6, blocksize=64, maxiter=..., threaded=true, workspace=nothing) -> SchurFactor
+
+Native real/complex multishift Schur: aggressive early deflation, concurrent
 small-bulge train, and accumulated blocked far updates. Real input preserves
 real 1x1/2x2 blocks. `workspace` reuses panel and update buffers; a shared context
 is serialized, with reentrant use rejected. No external eigensolver is called.
@@ -282,7 +285,10 @@ struct BalanceFactor{T,R}
     ilo::Int
     ihi::Int
 end
-"""Permutation isolation and radix-two Osborne balancing.
+"""
+    balance_matrix(A::AbstractMatrix{T}; permute=true, scale=true, maxiter=100) -> BalanceFactor
+
+Permutation isolation and radix-two Osborne balancing.
 B=Diagonal(1/scales)*A[p,p]*Diagonal(scales). Input is not changed.
 """
 function balance_matrix(A::AbstractMatrix{T};permute=true,scale=true,maxiter=100) where {T<:GenericFloat}

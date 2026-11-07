@@ -10,7 +10,10 @@ function _right_solve(A,B)
     Matrix(transpose(solve(lu_factor(transpose(B)),Matrix(transpose(A)))))
 end
 
-"""Matrix exponential by degree-13 Padé scaling and squaring (Higham).
+"""
+    matrix_exp(A::AbstractMatrix{T}; threaded=true) -> Matrix{T}
+
+Matrix exponential by degree-13 Padé scaling and squaring (Higham).
 All products and the rational solve use the native Julia kernels.
 """
 function matrix_exp(A::AbstractMatrix{T};threaded=true) where {T<:NativeFloat}
@@ -48,7 +51,10 @@ function _triangular_sqrt(T)
     end
     R
 end
-"""Principal matrix square root through complex Schur and triangular recurrence.
+"""
+    matrix_sqrt(A::AbstractMatrix{T}; threaded=true) -> Matrix
+
+Principal matrix square root through complex Schur and triangular recurrence.
 The result is complex even for real input; negative eigenvalues are supported.
 """
 function matrix_sqrt(A::AbstractMatrix{T};threaded=true) where {T<:GenericFloat}
@@ -56,7 +62,10 @@ function matrix_sqrt(A::AbstractMatrix{T};threaded=true) where {T<:GenericFloat}
     _square(A); F=schur_factor(Complex{real(T)}.(A)); R=_triangular_sqrt(F.T)
     _mm(_mm(F.Z,R;threaded),adjoint(F.Z);threaded)
 end
-"""Principal matrix logarithm by complex Schur, inverse scaling/squaring and
+"""
+    matrix_log(A::AbstractMatrix{T}; maxiter=200, rtol=8eps(real(T)), threaded=true) -> Matrix
+
+Principal matrix logarithm by complex Schur, inverse scaling/squaring and
 an atanh series. Singular input is rejected. A finite iteration limit is enforced.
 """
 function matrix_log(A::AbstractMatrix{T};maxiter=200,rtol=8eps(real(T)),threaded=true) where {T<:GenericFloat}
@@ -98,7 +107,11 @@ function matrix_power(A::AbstractMatrix{T},p::Number;threaded=true,kwargs...) wh
     threaded=threaded && generic_threadsafe(T)
     matrix_exp(p.*matrix_log(A;threaded,kwargs...);threaded)
 end
-"""Matrix sign via complex Schur. Eigenvalues on the imaginary axis are excluded."""
+"""
+    matrix_sign(A::AbstractMatrix{T}; threaded=true) -> Matrix
+
+Matrix sign via complex Schur. Eigenvalues on the imaginary axis are excluded.
+"""
 function matrix_sign(A::AbstractMatrix{T};threaded=true) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     n=_square(A); F=schur_factor(Complex{real(T)}.(A)); C=eltype(F.T); S=zeros(C,n,n)
@@ -132,7 +145,11 @@ function matrix_cos(A::AbstractMatrix{T};kwargs...) where {T<:GenericFloat}
     C=Complex{real(T)}; B=im.*C.(A)
     (matrix_exp(B;kwargs...)+matrix_exp(-B;kwargs...))./2
 end
-"""Fréchet derivative L_f(A,E) from the upper block of f([A E;0 A])."""
+"""
+    frechet_matrix(f, A::AbstractMatrix{T}, E::AbstractMatrix{T}; kwargs...) -> NamedTuple
+
+Fréchet derivative L_f(A,E) from the upper block of f([A E;0 A]).
+"""
 function frechet_matrix(f,A::AbstractMatrix{T},E::AbstractMatrix{T};kwargs...) where {T<:GenericFloat}
     n=_square(A); Base.require_one_based_indexing(E)
     size(E)==size(A) || throw(DimensionMismatch("Frechet direction dimensions differ"))

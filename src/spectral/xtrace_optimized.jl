@@ -72,7 +72,10 @@ function _xtrace_core(A,Omega,Y;normalization=:none,threaded=true,ranktol=64eps(
     (;samples,rank,additional_matvecs=rank,path=fullrank ? :inverse_triangular : :rank_deficient_sketch)
 end
 
-"""Optimized exchangeable XTrace, dense or native sparse, real or complex.
+"""
+    trace_xtrace(A; config=StochasticConfig(), normalization=:auto, kwargs...)
+
+Optimized exchangeable XTrace, dense or native sparse, real or complex.
 `num_probes` retains its existing meaning: p independent input probes, requiring
 p+rank(A*Omega) <= 2p operator products. `normalization=:auto` respheres spherical
 probes; :resphere also accepts Gaussian probes, and :none matches the explicit

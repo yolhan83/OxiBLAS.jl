@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Multiple minimum degree (Liu): every independent variable of minimum
+"""
+    multiple_minimum_degree(A)
+
+Multiple minimum degree (Liu): every independent variable of minimum
 degree is eliminated in one round before the degrees are updated, on the
 quotient graph with supervariables of `minimum_degree_ordering`.
 """
@@ -13,7 +16,10 @@ function _element_neighbors!(scratch,column,elements,incidence,active,marks,stam
     end
     scratch
 end
-"""Exact column minimum-degree on implicit row-clique elements.
+"""
+    column_minimum_degree(A; dense_threshold=nothing, absorb=true, kwargs...)
+
+Exact column minimum-degree on implicit row-clique elements.
 Ports the ordering semantics of Rust colamd/colamd_aggressive, whose upstream
 documentation explicitly disclaims real COLAMD. No numerical A'*A or initial
 column-intersection graph is materialized. Overlapping elements are unioned
@@ -89,7 +95,10 @@ function _checked_sparse_permutation(permutation,n)
     length(p)==n && sort(p)==collect(1:n) || throw(ArgumentError("invalid sparse ordering permutation"))
     p
 end
-"""Select a native ordering; permutation[new_index] is the old index.
+"""
+    sparse_ordering(A, algorithm=:minimum_degree; kwargs...)
+
+Select a native ordering; permutation[new_index] is the old index.
 `:amd` is approximate minimum degree on A+Aᵀ (Cholesky, LDLᵀ); `:amd_ata`
 on AᵀA without dense rows (LU) and `:amd_qr` on AᵀA (QR), the COLAMD
 substitutes of CSparse. `:minimum_degree` is the exact (slower) variant.
@@ -111,7 +120,10 @@ function sparse_ordering(A::NativeSparse,algorithm=:minimum_degree;kwargs...)
     algorithm===:column_minimum_degree && return column_minimum_degree(A;kwargs...)
     throw(ArgumentError("unknown sparse ordering algorithm"))
 end
-"""Exact symbolic fill count and bandwidth/profile for an explicit permutation.
+"""
+    ordering_metrics(A, permutation)
+
+Exact symbolic fill count and bandwidth/profile for an explicit permutation.
 This can be expensive: symbolic fill is computed, not cheaply predicted.
 """
 function ordering_metrics(A::NativeSparse,permutation)

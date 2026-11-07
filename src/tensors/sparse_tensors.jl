@@ -37,7 +37,11 @@ function Base.getindex(A::SparseTensor{T},i::Int) where T
     p=searchsortedfirst(A.indices,i)
     p<=length(A.indices) && A.indices[p]==i ? A.values[p] : zero(T)
 end
-"""Assigning a value stores it (an explicit zero included); O(nnz) insertion."""
+"""
+    setindex!(A::SparseTensor, v, i::Int)
+
+Assigning a value stores it (an explicit zero included); O(nnz) insertion.
+"""
 function Base.setindex!(A::SparseTensor,v,i::Int)
     @boundscheck checkbounds(A,i)
     p=searchsortedfirst(A.indices,i)
@@ -68,7 +72,11 @@ SparseArrays.nonzeros(A::SparseTensor)=A.values
 # re-imports it) and by SparseArrays before: the method is added to the
 # function object itself, whichever module owns it.
 (::typeof(getfield(SparseArrays,:nonzeroinds)))(A::SparseTensor{<:Any,1})=A.indices
-"""Stored coordinates (one tuple per entry, column-major order) and values."""
+"""
+    findnz(A::SparseTensor) -> (coordinates, values)
+
+Stored coordinates (one tuple per entry, column-major order) and values.
+"""
 function SparseArrays.findnz(A::SparseTensor)
     C=CartesianIndices(A.dims)
     ([Tuple(C[i]) for i in A.indices],copy(A.values))
@@ -120,7 +128,11 @@ function SparseTensor(dims::NTuple{N,Integer},coordinates,values::AbstractVector
     end
     _sparse_tensor_from(Tuple(Int.(dims)),keys,collect(values);combine)
 end
-"""Stored entries of a dense array (|x| > droptol) as a SparseTensor."""
+"""
+    SparseTensor(A::AbstractArray; droptol=0)
+
+Stored entries of a dense array (|x| > droptol) as a SparseTensor.
+"""
 function SparseTensor(A::AbstractArray{T,N};droptol=zero(real(T))) where {T,N}
     Base.require_one_based_indexing(A); idx=Int[]; vals=T[]
     for (i,v) in enumerate(A)
@@ -280,7 +292,10 @@ function _group_codes(A::SparseTensor,labels,groups::NTuple{3,Vector{Int}},dims)
     c1,c2,c3
 end
 
-"""Sparse × sparse: a column-wise SpGEMM (Gustavson) on the two operands
+"""
+    _sparse_pair(A, B, la, lb, out, dims)
+
+Sparse × sparse: a column-wise SpGEMM (Gustavson) on the two operands
 unfolded as matrices, per batch index. A is (free × contracted), B is
 (contracted × free), the output column (r, b) is accumulated from the columns
 (k, b) of A met in the column (r, b) of B. Computed zeros are kept."""
@@ -379,7 +394,10 @@ function _sparse_pair_grouped(A::SparseTensor{T},B::SparseTensor{T},la,lb,L,K,R,
     SparseTensor{T,length(outdims)}(_Shared(),outdims,keys,vals)   # keys emitted sorted
 end
 
-"""Sparse × dense (either order): per batch index, the sparse operand as a CSR
+"""
+    _sparse_dense_pair(A, B, la, lb, out, dims; threaded=true, allocator=nothing)
+
+Sparse × dense (either order): per batch index, the sparse operand as a CSR
 matrix (free labels × contracted labels) times the dense operand reshaped to
 (contracted × free), with the native CSR kernel. Dense result."""
 function _sparse_dense_pair(A::SparseTensor{T},B::AbstractArray{T},la,lb,out,dims;threaded=true,allocator=nothing) where T
@@ -775,7 +793,10 @@ function _contract_sparse(A,B,ca,cb,fa,fb,conjugateA,conjugateB,output;threaded=
     R=_einsum_pair_any(prepare(A,conjugateA),prepare(B,conjugateB),la,lb,out,dims;threaded,kwargs...)
     _einsum_output(R,output,T)
 end
-"""einsum! into a sparse destination (SparseTensor, SparseMatrixCSC,
+"""
+    _sparse_einsum!(C, plan, arrays, α, β; workspace=nothing, kwargs...)
+
+einsum! into a sparse destination (SparseTensor, SparseMatrixCSC,
 SparseVector, CSRMatrix, CSCMatrix): C ← α·result + β·C; C's storage vectors
 are resized in place. The full result is formed before C changes."""
 function _sparse_einsum!(C,plan::EinsumPlan,arrays,α,β;workspace=nothing,kwargs...)

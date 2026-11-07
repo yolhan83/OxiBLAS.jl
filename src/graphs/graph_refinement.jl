@@ -91,7 +91,10 @@ function _refine_partition_dispatch!(labels,G,fraction,imbalance,passes,method;k
     end
     labels
 end
-"""Refine a supplied two-way labeling using locked best-prefix FM passes or
+"""
+    refine_partition(A, initial; method=:fm, fraction=0.5, imbalance=0.1, passes=6, kwargs...)
+
+Refine a supplied two-way labeling using locked best-prefix FM passes or
 existing greedy moves/pair swaps. Labels are copied, never modified in place.
 The retained result improves balance violation first, then cut, in working
 precision; balanced reports the requested left fraction, not an optimum.

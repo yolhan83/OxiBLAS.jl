@@ -15,7 +15,10 @@ end
     1<=row<=size(F.data,1) || throw(ArgumentError("band LU fill exceeded storage"))
     F.data[row,j]=value
 end
-"""Partial-pivoted band LU in (2kl+ku+1)×n compact storage. Local pivot
+"""
+    band_lu(A; check=true) -> BandLUFactor
+
+Partial-pivoted band LU in (2kl+ku+1)×n compact storage. Local pivot
 operations and multipliers are retained in elimination order, as in GBTRF.
 No full matrix expansion is made.
 """
@@ -299,7 +302,11 @@ function _packed_chol_kernel!(d::Vector{T},n::Int,threaded::Bool,check::Bool) wh
     end
     0
 end
-"""Native packed Cholesky, retaining only n(n+1)/2 lower entries."""
+"""
+    packed_cholesky(A; threaded=true) -> PackedCholeskyFactor
+
+Native packed Cholesky, retaining only n(n+1)/2 lower entries.
+"""
 function packed_cholesky(A::PackedMatrix{T};threaded::Bool=true) where {T<:GenericFloat}
     F,_=_packed_cholesky_info(A,true;threaded)
     F
@@ -376,7 +383,10 @@ function Base.getproperty(F::AasenFactor,s::Symbol)
     end
     getfield(F,s)
 end
-"""Partially pivoted Aasen tridiagonal congruence A[p,p]=L*T*L' (or L*T*L^T).
+"""
+    aasen_factor(A; uplo=:L, hermitian=true, threaded=true) -> AasenFactor
+
+Partially pivoted Aasen tridiagonal congruence A[p,p]=L*T*L' (or L*T*L^T).
 The first column of the unit lower L stays e1. Only uplo is read.
 """
 function aasen_factor(A::AbstractMatrix{T};uplo=:L,hermitian=true,threaded=true) where {T<:GenericFloat}

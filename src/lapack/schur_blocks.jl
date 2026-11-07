@@ -262,7 +262,10 @@ function _ordinary_vectors(S;left=false)
     _pencil_vectors(S,nothing,C.(values),ones(C,n);left)
 end
 
-"""Native block TREVC. Real input stores a conjugate pair as real/imaginary
+"""
+    trevc_right(S::AbstractMatrix{T}; packed=T<:Real) -> AbstractMatrix
+
+Native block TREVC. Real input stores a conjugate pair as real/imaginary
 columns, as in OxiBLAS Rust; complex input returns complex eigenvectors.
 `packed=false` returns one complex vector per eigenvalue for real input too.
 """
@@ -289,7 +292,10 @@ function _trevc(S,left,packed)
     V
 end
 
-"""Reciprocal eigenvalue condition numbers |y'*x|/(norm(y)*norm(x)).
+"""
+    trsna_s(S::AbstractMatrix{T}) -> Vector{real(T)}
+
+Reciprocal eigenvalue condition numbers |y'*x|/(norm(y)*norm(x)).
 Ports Rust TRSNA-S, including one common value for a real conjugate pair.
 """
 function trsna_s(S::AbstractMatrix{T}) where {T<:GenericFloat}
@@ -297,7 +303,10 @@ function trsna_s(S::AbstractMatrix{T}) where {T<:GenericFloat}
     [min(one(real(T)),abs(dotc(view(Y,:,j),view(X,:,j)))) for j in axes(S,1)]
 end
 
-"""Rust TRSNA-SEP's spectral-distance estimate (not a singular-value sep).
+"""
+    trsna_sep(S::AbstractMatrix{T}) -> Vector{real(T)}
+
+Rust TRSNA-SEP's spectral-distance estimate (not a singular-value sep).
 Repeated eigenvalues return zero; an isolated block has no complement and
 returns Inf. Use `schur_condition` for the coupled invariant-subspace estimate.
 """
@@ -357,7 +366,10 @@ function _coupled_local(A,D,B,E,C,F)
     reshape(v[1:m],p,q),reshape(v[m+1:end],p,q),scale
 end
 
-"""Solve A*R-L*B=C, D*R-L*E=F for two (quasi-)triangular pencils.
+"""
+    generalized_sylvester(A::AbstractMatrix{T}, D::AbstractMatrix{T}, B::AbstractMatrix{T}, E::AbstractMatrix{T}, C::AbstractMatrix{T}, F::AbstractMatrix{T}) -> Tuple{Matrix{T}, Matrix{T}, Number}
+
+Solve A*R-L*B=C, D*R-L*E=F for two (quasi-)triangular pencils.
 Block substitution with complete pivoting of each 1x1/2x2 coupled system.
 The result satisfies the *scaled* right-hand sides: scale*C and scale*F.
 """
@@ -441,7 +453,10 @@ function _pencil_swap!(S,B,Q,Z,k,p,q)
     nothing
 end
 
-"""Reorder whole real 1x1/2x2 or complex 1x1 generalized Schur blocks.
+"""
+    qz_reorder(F::QZFactor, select::Function) -> QZFactor
+
+Reorder whole real 1x1/2x2 or complex 1x1 generalized Schur blocks.
 The selector receives a generalized eigenvalue (possibly Inf/NaN). Selecting
 either member of a real pair selects its entire block. Input is not modified.
 """
@@ -566,7 +581,10 @@ function _coupled_sep(A,D,B,E;iterations=8)
     iszero(estimate) ? R(Inf) : Base.inv(estimate)
 end
 
-"""Pencil diagnostics: homogeneous eigenvalue reciprocal condition numbers,
+"""
+    qz_condition(F::QZFactor; split=nothing) -> NamedTuple
+
+Pencil diagnostics: homogeneous eigenvalue reciprocal condition numbers,
 and (when `split` is given) left/right deflating-subspace projection conditions
 plus a coupled Sylvester inverse-1-norm separation estimate. No dense n^4
 Kronecker operator is formed. Estimates are not certified error bounds.

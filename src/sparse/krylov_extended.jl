@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 _apply_preconditioner!(z,r,P,iteration)=P isa Function ? P(z,r,iteration) : _precondition!(z,r,P)
 
-"""Flexible right-preconditioned restarted GMRES. A callable preconditioner
+"""
+    fgmres(A, b; x0=zeros(T,length(b)), restart=min(30,max(1,length(b))), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Flexible right-preconditioned restarted GMRES. A callable preconditioner
 has signature P(z,r,iteration), so it may change between Arnoldi steps.
 Stored preconditioned basis vectors make this flexibility mathematically valid.
 """
@@ -53,7 +56,10 @@ function fgmres(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),
     (;x,converged=false,iterations,residual,reason=:maxiter)
 end
 
-"""Preconditioned conjugate gradients with an explicit positive-definite
+"""
+    pcg(A, b; x0=zeros(T,length(b)), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Preconditioned conjugate gradients with an explicit positive-definite
 preconditioner and true residual checks. Breakdowns are never convergence.
 """
 function pcg(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),maxiter=2length(b),
@@ -82,7 +88,10 @@ function pcg(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),max
     (;x,converged=false,iterations,residual,reason=:maxiter)
 end
 
-"""Paige–Saunders short-recurrence MINRES for Hermitian systems, including
+"""
+    minres(A, b; x0=zeros(T,length(b)), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Paige–Saunders short-recurrence MINRES for Hermitian systems, including
 indefinite matrices. The optional fixed preconditioner must be Hermitian positive
 definite. Every reported convergence uses the true residual.
 """
@@ -125,7 +134,10 @@ function minres(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),
     (;x,converged=false,iterations,residual,reason=:maxiter)
 end
 
-"""Transpose-free quasi-minimal residual with optional fixed right
+"""
+    tfqmr(A, b; x0=zeros(T,length(b)), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Transpose-free quasi-minimal residual with optional fixed right
 preconditioning. `maxiter` counts half-steps; the stopping residual is exact.
 """
 function tfqmr(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),maxiter=2length(b),
@@ -178,7 +190,10 @@ end
 
 _native_adjoint_mv!(y,A::AbstractMatrix,x)=gemv!(y,A,x;trans=:C)
 _native_adjoint_mv!(y,A::NativeSparse,x)=sparse_mul!(y,A,x;trans=:C)
-"""Unpreconditioned two-sided QMR, using A and A' products and short
+"""
+    qmr(A, b; x0=zeros(T,length(b)), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T))) -> NamedTuple
+
+Unpreconditioned two-sided QMR, using A and A' products and short
 bi-Lanczos recurrences. True residuals govern all termination decisions.
 """
 function qmr(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),maxiter=2length(b),
@@ -218,7 +233,10 @@ function qmr(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),max
     (;x,converged=false,iterations,residual,reason=:maxiter)
 end
 
-"""IDR(s) with an orthonormal local shadow space, oblique Sonneveld-space
+"""
+    idrs(A, b; s=4, x0=zeros(T,length(b)), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing, seed=0x0b1a5, angle=real(T)(.7)) -> NamedTuple
+
+IDR(s) with an orthonormal local shadow space, oblique Sonneveld-space
 updates, angle-stabilized omega and optional fixed right preconditioning.
 """
 function idrs(A::AbstractMatrix{T},b::AbstractVector{T};s=4,x0=zeros(T,length(b)),maxiter=2length(b),

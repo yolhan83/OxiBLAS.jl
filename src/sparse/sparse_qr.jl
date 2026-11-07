@@ -7,7 +7,10 @@ struct SparseQRFactor{T,R}
     p::Vector{Int}
     shape::Tuple{Int,Int}
 end
-"""Sparse Householder QR, A[:,p] = Q·[R; 0].
+"""
+    sparse_qr(A::NativeSparse; pivot=true, ordering=:natural) -> SparseQRFactor
+
+Sparse Householder QR, A[:,p] = Q·[R; 0].
 
 `pivot=true` (default): rank-revealing column pivoting by recomputed norms,
 column by column, with fill in column dictionaries. `pivot=false`:

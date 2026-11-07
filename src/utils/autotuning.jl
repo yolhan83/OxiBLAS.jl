@@ -10,7 +10,10 @@ struct GemmTuning
 end
 _tuning_cpu()=string(Sys.ARCH,':',Sys.CPU_NAME,':',VERSION,':',Threads.nthreads())
 
-"""Explicit, opt-in native GEMM calibration. Calling this function runs timings;
+"""
+    autotune_gemm(::Type{T}, m, n, k; kernel=:auto, threaded=true, repeats=3, candidates=...) -> GemmTuning
+
+Explicit, opt-in native GEMM calibration. Calling this function runs timings;
 loading the package never calibrates or benchmarks. Candidate results are checked
 against the native reference before their measured time is accepted.
 """
@@ -42,7 +45,11 @@ function autotune_gemm(::Type{T},m::Integer,n::Integer,k::Integer;kernel=:auto,t
     GemmTuning(candidates[best],kind,string(T),(Int(m),Int(n),Int(k)),_tuning_cpu(),timings,collect(candidates))
 end
 
-"""Save an explicitly measured configuration in a simple versioned text file."""
+"""
+    save_gemm_tuning(path, tuning) -> path
+
+Save an explicitly measured configuration in a simple versioned text file.
+"""
 function save_gemm_tuning(path::AbstractString,tuning::GemmTuning)
     open(path,"w") do io
         println(io,"OxiBLAS tuning 1"); println(io,tuning.cpu); println(io,tuning.element_type)
@@ -52,7 +59,10 @@ function save_gemm_tuning(path::AbstractString,tuning::GemmTuning)
     end
     path
 end
-"""Load tuning only for the same CPU, Julia version, thread count and type.
+"""
+    load_gemm_tuning(::Type{T}, path)
+
+Load tuning only for the same CPU, Julia version, thread count and type.
 Returns the config/kernel/shape; it never starts a new calibration.
 """
 function load_gemm_tuning(::Type{T},path::AbstractString) where {T<:NativeFloat}
@@ -99,7 +109,10 @@ function clear_spectral_tuning!()
     empty!(_ACTIVE_SPECTRAL_TUNING)
 end
 
-"""Explicit, opt-in native spectral algorithm calibration (SVD and Schur).
+"""
+    autotune_spectral(::Type{T}, n=128; threaded=true, repeats=3) -> SpectralTuning
+
+Explicit, opt-in native spectral algorithm calibration (SVD and Schur).
 Runs timings for candidate algorithms on an n × n matrix; loading the package
 never calibrates or benchmarks. Candidate results are checked numerically before acceptance.
 """
@@ -178,7 +191,11 @@ function autotune_spectral(::Type{T}, n::Integer=128; threaded::Bool=true, repea
     tuning
 end
 
-"""Save an explicitly measured spectral configuration in a simple versioned text file."""
+"""
+    save_spectral_tuning(path, tuning) -> path
+
+Save an explicitly measured spectral configuration in a simple versioned text file.
+"""
 function save_spectral_tuning(path::AbstractString, tuning::SpectralTuning)
     open(path, "w") do io
         println(io, "OxiBLAS spectral tuning 1")
@@ -191,7 +208,10 @@ function save_spectral_tuning(path::AbstractString, tuning::SpectralTuning)
     path
 end
 
-"""Load spectral tuning only for the same CPU, Julia version, thread count and type.
+"""
+    load_spectral_tuning(::Type{T}, path) -> SpectralConfig
+
+Load spectral tuning only for the same CPU, Julia version, thread count and type.
 Returns the SpectralConfig and activates it for automatic spectral dispatch.
 """
 function load_spectral_tuning(::Type{T}, path::AbstractString) where {T<:NativeFloat}

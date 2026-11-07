@@ -256,7 +256,10 @@ function _trmm_trans!(::Val{2},B::AbstractMatrix{T},A_adj::OA,α::T,left::Bool,u
     end
 end
 
-"""In-place triangular multiplication; recursive blocks use native GEMM.
+"""
+    trmm!(B, A, α=1; side=:L, uplo=:U, trans=:N, unit=false, kwargs...) -> B
+
+In-place triangular multiplication; recursive blocks use native GEMM.
 `blocksize` sets the scalar leaf size. GEMM options control off-diagonal updates.
 Only aliased A requires a full logical snapshot; B is never fully copied.
 """
@@ -491,7 +494,10 @@ function _trsm_trans!(::Val{2},B::AbstractMatrix{T},A_adj::OA,α::T,left::Bool,u
     end
 end
 
-"""Triangular solve with recursive native-GEMM updates and reusable panels.
+"""
+    trsm!(B, A, α=1; side=:L, uplo=:U, trans=:N, unit=false, kwargs...) -> B
+
+Triangular solve with recursive native-GEMM updates and reusable panels.
 A singular nonunit diagonal is reported before any mutation of B.
 """
 function trsm!(B::AbstractMatrix{T},A::AbstractMatrix{T},α0=one(T);side=:L,uplo=:U,trans=:N,unit=false,

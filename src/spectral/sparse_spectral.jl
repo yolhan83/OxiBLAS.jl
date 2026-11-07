@@ -46,7 +46,11 @@ function _arnoldi_ritz(A,V,H,used,nev,which,rtol,work)
     flags=[residuals[j]<=rtol*max(one(real(eltype(V))),abs(values[j])) for j in eachindex(values)]
     (;values,vectors,residuals,converged=length(values)==nev && all(flags)),E.values,order
 end
-"""Twice-reorthogonalized Arnoldi Ritz pairs for real/complex operators."""
+"""
+    arnoldi(A; nev=1, maxiter=..., which=:largest_magnitude, start=nothing, rtol=...)
+
+Twice-reorthogonalized Arnoldi Ritz pairs for real/complex operators.
+"""
 function arnoldi(A::AbstractMatrix{T};nev=1,maxiter=min(size(A,1),max(20,4nev)),which=:largest_magnitude,
                  start=nothing,rtol=sqrt(eps(real(T)))) where {T<:NativeFloat}
     n=_square(A); 0<nev<=maxiter<=n && rtol>=0 || throw(ArgumentError("invalid Arnoldi options"))
@@ -58,7 +62,10 @@ function arnoldi(A::AbstractMatrix{T};nev=1,maxiter=min(size(A,1),max(20,4nev)),
     result,_,_=_arnoldi_ritz(A,V,H,used,nev,which,rtol,work)
     merge(result,(;iterations=used,reason=result.converged ? :converged : :maxiter))
 end
-"""Implicitly restarted Arnoldi. Unwanted Ritz shifts are chased through the
+"""
+    iram(A; nev=1, subspace=..., maxrestarts=30, which=:largest_magnitude, kwargs...)
+
+Implicitly restarted Arnoldi. Unwanted Ritz shifts are chased through the
 small Hessenberg matrix; the transformed Arnoldi basis and residual are retained.
 No dense expansion of A and no external eigensolver are used.
 """
@@ -166,7 +173,10 @@ function _orthogonal_basis(A;rtol=32eps(real(eltype(A))))
     end
     Q[:,1:used]
 end
-"""Locally optimal block preconditioned conjugate-gradient eigenpairs.
+"""
+    lobpcg(A; nev=1, B=nothing, maxiter=100, which=:smallest, kwargs...)
+
+Locally optimal block preconditioned conjugate-gradient eigenpairs.
 Supports a Hermitian positive-definite metric B for A*X=B*X*Diagonal(values).
 The Rayleigh–Ritz subspace is span(X, preconditioned residual, old direction).
 """

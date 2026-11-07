@@ -39,7 +39,10 @@ function _batched_execute!(Cs,As,Bs,α0,β0;algorithm=:auto,kernel=:auto,threade
     w isa GemmWorkspace ? lock(run,w.guard) : run()
 end
 
-"""Independent batched GEMM with cross-batch alias snapshots and task-owned panels.
+"""
+    gemm_batched!(Cs, As, Bs, α=1, β=0; transA=:N, transB=:N, kwargs...) -> Cs
+
+Independent batched GEMM with cross-batch alias snapshots and task-owned panels.
 `threaded=false` disables the outer schedule; no nested GEMM tasks are created.
 A homogeneous batch may reuse one `GemmWorkspace` sized for its largest members.
 """
@@ -63,7 +66,11 @@ function gemm_batched!(Cs,As,Bs,α=1,β=0;transA=:N,transB=:N,kwargs...)
     Cs
 end
 
-"""GEMM on 3-D Julia arrays; dimension three is the independent batch index."""
+"""
+    gemm_strided_batched!(C, A, B, α=1, β=0; transA=:N, transB=:N, kwargs...) -> C
+
+GEMM on 3-D Julia arrays; dimension three is the independent batch index.
+"""
 function gemm_strided_batched!(C::AbstractArray{T,3},A::AbstractArray{T,3},B::AbstractArray{T,3},α=one(T),β=zero(T);transA=:N,transB=:N,kwargs...) where {T<:GenericFloat}
     Base.require_one_based_indexing(C,A,B)
     size(C,3)==size(A,3)==size(B,3) || throw(DimensionMismatch("batch counts differ"))

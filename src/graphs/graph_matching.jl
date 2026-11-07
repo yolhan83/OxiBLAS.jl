@@ -60,7 +60,10 @@ function _matrix_bipartite_matching(A::NativeSparse)
     adjacency=[Int[C.colind[e] for e in C.rowptr[u]:C.rowptr[u+1]-1 if !iszero(C.values[e])] for u in 1:C.m]
     _hopcroft_karp(adjacency,C.n)
 end
-"""Maximum-cardinality matching of a square undirected bipartite graph.
+"""
+    bipartite_graph_matching(A)
+
+Maximum-cardinality matching of a square undirected bipartite graph.
 The off-diagonal pattern is symmetrized; diagonal and numerical zeros ignored.
 Returns nothing for a non-bipartite graph. This differs from bipartite_matching,
 which treats a rectangular matrix as a row/column bipartite incidence pattern.

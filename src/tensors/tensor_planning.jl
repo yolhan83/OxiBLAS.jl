@@ -43,7 +43,10 @@ function _einsum_layout_pair(la,lb,out,dims,layouta,layoutb)
 end
 _einsum_cost_key(work,traffic,peak,model,weight)=model===:layout ? (work+weight*traffic,work,traffic,peak) : (work,traffic,peak)
 
-"""Explain a plan's arithmetic and physical-layout model without reading data.
+"""
+    einsum_layout_report(plan::EinsumPlan)
+
+Explain a plan's arithmetic and physical-layout model without reading data.
 Traffic is a heuristic scalar-entry score, not measured bytes/time or a guarantee
 that a reshape copies. Reusing a plan on other strides keeps correctness but may
 change the merits of its path. No measured-speed optimality is claimed.
@@ -141,7 +144,10 @@ function _einsum_search_steps(labels,output,dimensions,optimize,element_bytes,me
     best[].steps,best[].peak,length(labels)==1
 end
 
-"""A contraction plan executed as serial tiles; arrays remain ordinary Julia arrays.
+"""
+    SlicedEinsumPlan
+
+A contraction plan executed as serial tiles; arrays remain ordinary Julia arrays.
 `scratch_limit` bounds the modeled live tile/intermediate payload, excluding the
 caller-owned full output, inputs, alias snapshots, pool retention and packing.
 Tile kernels may use native threading; reductions across tiles are ordered.
@@ -155,7 +161,10 @@ struct SlicedEinsumPlan
     slice_count::Int
 end
 
-"""Plan explicit named-label tiles, e.g. chunks=(i=16,k=32). A sliced reduction
+"""
+    plan_einsum_sliced(specification, arrays...; chunks, scratch_limit=nothing, kwargs...) -> SlicedEinsumPlan
+
+Plan explicit named-label tiles, e.g. chunks=(i=16,k=32). A sliced reduction
 accumulates partial sums; slicing output labels writes disjoint output tiles.
 ASCII labels, repeated labels and unsliced broadcast ellipses are supported.
 There is no dense Tensor container and no process/RSS or out-of-core guarantee.

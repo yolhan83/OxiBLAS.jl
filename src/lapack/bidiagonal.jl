@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Compact two-sided Householder reduction. A=U*B*V'; B is upper bidiagonal
+"""
+    BidiagonalFactor{T,R}
+
+Compact two-sided Householder reduction. A=U*B*V'; B is upper bidiagonal
 for tall inputs and lower bidiagonal for wide inputs. Reflector storage is O(m*n).
 U and V are materialized only when the corresponding property is requested.
 """

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""Cache blocking. Defaults adapt upstream MC=576, KC=448/896, NC≈2048."""
+"""
+    GemmConfig(::Type{T}=Float64; mc=576, kc=..., nc=2048, parallel_threshold=8_000_000, small_threshold=8)
+
+Cache blocking. Defaults adapt upstream MC=576, KC=448/896, NC≈2048.
+"""
 struct GemmConfig
     mc::Int
     kc::Int

@@ -78,7 +78,10 @@ struct SparseBlockedLUFactor{T,R}
     factor::SparseLUFactor{T,R}
     panels::Vector{UnitRange{Int}}
 end
-"""Sparse blocked right-looking LU. Sparse pivot panels are factored in
+"""
+    sparse_lu_blocked(A::NativeSparse; blocksize=24, threaded=true) -> SparseBlockedLUFactor
+
+Sparse blocked right-looking LU. Sparse pivot panels are factored in
 column dictionaries; only the active L21/U12 update front is packed densely
 for native TRSM/GEMM. Global A is never expanded to an n×n dense matrix.
 """

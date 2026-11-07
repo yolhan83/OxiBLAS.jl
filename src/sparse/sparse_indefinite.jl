@@ -20,7 +20,10 @@ function _ldl_block_scaled(a,b,c,hermitian,k)
     !iszero(determinant) || throw(SingularException(k))
     scale,aa,bb,cc,bh,determinant
 end
-"""Sparse symmetric/Hermitian LDL with Bunch–Kaufman 1x1/2x2 pivots, by
+"""
+    sparse_ldlt(A::NativeSparse; uplo=:L, hermitian=true, pivot=:bunchkaufman, ordering=:natural, check=true) -> SparseLDLFactor
+
+Sparse symmetric/Hermitian LDL with Bunch–Kaufman 1x1/2x2 pivots, by
 supernodal multifrontal elimination (src/sparse/supernodal_ldlt.jl). Only uplo is
 read. Factor identity: A[p,p]=L*D*(hermitian ? L' : transpose(L)); p is the
 elimination order (the ordering composed with a postorder and the pivots).
@@ -108,7 +111,10 @@ function solve(F::SparseLDLFactor{T},b::AbstractVecOrMat{T};trans=:N,threaded=tr
     n=length(F.p); Base.require_one_based_indexing(b); size(b,1)==n || throw(DimensionMismatch("sparse LDL RHS differs"))
     _ldl_solve!(F,copyto!(similar(b),b);trans,threaded)
 end
-"""Inertia from real/Hermitian pivot blocks in working precision. tol applies
+"""
+    ldl_inertia(F::SparseLDLFactor{T}; tol=zero(real(T))) -> NamedTuple
+
+Inertia from real/Hermitian pivot blocks in working precision. tol applies
 to D-block eigenvalues, not to eigenvalues of A or a certified spectral gap.
 """
 function ldl_inertia(F::SparseLDLFactor{T};tol=zero(real(T))) where T
@@ -144,7 +150,10 @@ struct SparseStaticLUFactor{T,R}
     growth_factor::R
 end
 Base.size(F::SparseStaticLUFactor)=size(F.L)
-"""Fixed-order sparse LU with phase-preserving diagonal perturbations.
+"""
+    sparse_lu_static(A::NativeSparse; epsilon=sqrt(eps(real(eltype(A)))), relative=false, ordering=:natural) -> SparseStaticLUFactor
+
+Fixed-order sparse LU with phase-preserving diagonal perturbations.
 A[p,q]+Diagonal(perturbations)=L*U, with p=q from a symmetric prescribed
 ordering. A perturbed factor solves the modified system, not exactly A.
 relative=true scales epsilon by the largest input magnitude.

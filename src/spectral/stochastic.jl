@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Reproducible stochastic estimates with a private random stream per call.
+"""
+    StochasticConfig(; num_probes=30, seed=42, probe_type=:rademacher, confidence=0.95)
+
+Reproducible stochastic estimates with a private random stream per call.
 `probe_type` is :rademacher, :gaussian or :spherical (covariance I).
 `confidence` is metadata, not a certified confidence interval.
 """
@@ -66,7 +69,10 @@ function _stochastic_summary(samples,matvecs,config;independent=true)
       error_kind=independent ? :sampling_only : :unavailable_correlated_samples)
 end
 
-"""Hutchinson trace estimate for real/complex square operators.
+"""
+    trace_hutchinson(A; config=StochasticConfig())
+
+Hutchinson trace estimate for real/complex square operators.
 Complex probes use four unit phases; std_error measures E|error|², not separate
 real/imaginary confidence intervals. A single probe has unknown (Inf) error.
 """
@@ -92,7 +98,10 @@ function _basis_trace(A,Q,w)
     end
     value
 end
-"""Hutch++ with independent range sketch and residual probes.
+"""
+    trace_hutch_plus_plus(A; config=StochasticConfig())
+
+Hutch++ with independent range sketch and residual probes.
 num_probes budgets operator applications (unused rank-deficient sketch columns
 can reduce that count). The returned SE is conditional sampling error only.
 """
@@ -111,7 +120,10 @@ function trace_hutch_plus_plus(A::AbstractMatrix{T};config=StochasticConfig()) w
     _stochastic_summary(samples,s+size(Q,2)+r,config)
 end
 
-"""Exchangeable leave-one-out trace control variate (XTrace family).
+"""
+    trace_xtrace_loo(A; config=StochasticConfig())
+
+Exchangeable leave-one-out trace control variate (XTrace family).
 Each probe is independent of the range basis formed from all other probes.
 This implementation rebuilds those bases; it does not implement the optimized
 inverse-triangular XTrace formula. Correlated samples: std_error is NaN.
@@ -132,7 +144,11 @@ function trace_xtrace_loo(A::AbstractMatrix{T};config=StochasticConfig()) where 
     _stochastic_summary(samples,matvecs,config;independent=false)
 end
 
-"""Unbiased diagonal estimate; entrywise standard errors use complex |.|²."""
+"""
+    stochastic_diagonal(A; config=StochasticConfig())
+
+Unbiased diagonal estimate; entrywise standard errors use complex |.|².
+"""
 function stochastic_diagonal(A::AbstractMatrix{T};config=StochasticConfig()) where {T<:NativeFloat}
     A=_stochastic_setup(A); n=size(A,1); R=real(T); z=zeros(T,n); w=similar(z)
     diagonal=zeros(T,n); m2=zeros(R,n); state=Ref(config.seed)
@@ -147,7 +163,10 @@ function stochastic_diagonal(A::AbstractMatrix{T};config=StochasticConfig()) whe
     (;diagonal,std_error,n_probes_used=p,matvecs=p,confidence=config.confidence,error_kind=:sampling_only)
 end
 
-"""Rectangular Frobenius estimate. squared_estimate is unbiased; its square
+"""
+    stochastic_frobenius(A; config=StochasticConfig())
+
+Rectangular Frobenius estimate. squared_estimate is unbiased; its square
 root estimate is generally biased. squared_std_error applies to the square.
 """
 function stochastic_frobenius(A::AbstractMatrix{T};config=StochasticConfig()) where {T<:NativeFloat}
@@ -193,7 +212,10 @@ function _log_quadrature!(A,z,V,w,d,e)
     value=sum(abs2(E.vectors[1,k])*log(E.values[k]) for k in 1:used)
     norm^2*value,used
 end
-"""Stochastic Lanczos quadrature logdet for Hermitian positive-definite A.
+"""
+    stochastic_logdet(A; config=StochasticConfig(), lanczos_steps=..., check_hermitian=true)
+
+Stochastic Lanczos quadrature logdet for Hermitian positive-definite A.
 Hermitian symmetry is checked exactly by default; check_hermitian=false is a
 caller assertion. Positive Ritz values do not certify global definiteness.
 std_error excludes Lanczos truncation bias; no quadrature error bound is claimed.

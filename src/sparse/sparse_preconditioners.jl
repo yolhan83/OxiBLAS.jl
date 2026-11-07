@@ -106,7 +106,10 @@ function _sparse_columns(A::CSRMatrix{T},selected) where T
     end
     _rows_to_csr(rows,T,length(selected))
 end
-"""Sparse approximate inverse from independent column least-squares problems.
+"""
+    spai(A::NativeSparse; pattern_levels=1, droptol=zero(real(eltype(A))), threaded=true) -> SPAIPreconditioner
+
+Sparse approximate inverse from independent column least-squares problems.
 `pattern_levels` expands the initial column graph support. Each task owns its
 sparse QR and scratch; assembly happens after all column solves complete.
 """
@@ -203,7 +206,10 @@ struct AMGPreconditioner{T,R}
     cycle::Symbol
     guard::ReentrantLock
 end
-"""Aggregation algebraic multigrid for Hermitian positive-definite sparse A.
+"""
+    amg(A::NativeSparse; smoothed=true, coarse_size=32, maxlevels=10, presweeps=2, postsweeps=2, cycle=:V) -> AMGPreconditioner
+
+Aggregation algebraic multigrid for Hermitian positive-definite sparse A.
 Piecewise-constant aggregates may be smoothed before Galerkin coarsening.
 V/W cycles use weighted Jacobi and a native sparse Cholesky coarse solve.
 """

@@ -282,7 +282,10 @@ end
 # per-call cost of POTRF/TRSM/HERK exceeded their gain (100², 300², 22³ and
 # 40³ Laplacians, AMD and natural orders, thresholds 96–768).
 const _MF_SMALL_FRONT=192
-"""Supernodal multifrontal Hermitian Cholesky of the `uplo` triangle of A,
+"""
+    multifrontal_cholesky(A::NativeSparse; uplo=:L, ordering=:amd, supernodal=:auto, maxwidth=typemax(Int), threaded=true) -> MultifrontalCholeskyFactor
+
+Supernodal multifrontal Hermitian Cholesky of the `uplo` triangle of A,
 P·A·Pᵀ = L·Lᴴ, with a fill-reducing `ordering` (AMD by default). The dense
 fronts use this package's POTRF/TRSM/HERK (`threaded` lets them use threads).
 `supernodal=:auto` follows CHOLMOD: an up-looking simplicial factorization

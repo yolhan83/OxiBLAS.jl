@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Factored sparse approximate inverse Z*Diagonal(1/d)*W'.
+"""
+    AINVPreconditioner{T}
+
+Factored sparse approximate inverse Z*Diagonal(1/d)*W'.
 Biconjugation without pivoting; a zero/nonfinite pivot is reported explicitly.
 Dropping is relative to each updated column and retains its unit diagonal.
 """

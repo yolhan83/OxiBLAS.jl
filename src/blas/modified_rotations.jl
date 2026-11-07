@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""Modified Givens parameters in BLAS order `(flag,h11,h21,h12,h22)`.
+"""
+    RotmParams{T<:AbstractFloat}
+    RotmParams(::Type{T}=Float64; flag=-2, h11=0, h21=0, h12=0, h22=0)
+    RotmParams(p::AbstractVector)
+
+Modified Givens parameters in BLAS order `(flag,h11,h21,h12,h22)`.
 Flags -2/-1/0/1 select identity/full/unit-diagonal/implicit-off-diagonal forms.
 Ignored fields need not be initialized. Compatible AbstractFloat scalars use their own arithmetic; native real floats retain SIMD.
 """
@@ -225,7 +230,11 @@ end
 
 rotmg(d1::T,d2::T,x1::T,y1::T) where {T<:AbstractFloat}=_rotmg_scaled(d1,d2,x1,y1)
 
-"""`rotmg!(state,y1)` updates `[d1,d2,x1]` after successful generation and returns parameters."""
+"""
+    rotmg!(state, y1) -> RotmParams
+
+`rotmg!(state,y1)` updates `[d1,d2,x1]` after successful generation and returns parameters.
+"""
 function rotmg!(state::AbstractVector{T},y1::T) where {T<:AbstractFloat}
     Base.require_one_based_indexing(state)
     length(state)==3 || throw(DimensionMismatch("ROTMG state must contain d1,d2,x1"))

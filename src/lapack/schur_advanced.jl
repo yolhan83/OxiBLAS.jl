@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Stably move selected eigenvalues to the leading complex Schur block.
+"""
+    schur_reorder(F::SchurFactor{T}, select::Function) -> SchurFactor
+
+Stably move selected eigenvalues to the leading complex Schur block.
 Adjacent unitary swaps preserve A=Z*T*Z'. Repeated inseparable eigenvalues
 are rejected if a requested swap cannot distinguish their invariant subspaces.
 """

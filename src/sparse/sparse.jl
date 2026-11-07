@@ -103,6 +103,8 @@ function _precondition!(z,r,diagonal)
 end
 
 """
+    cg(A::AbstractMatrix{T}, b::AbstractVector{T}; x0=zeros(T,length(b)), rtol=sqrt(eps(real(T))), atol=zero(real(T)), maxiter=2length(b), diagonal=nothing) -> NamedTuple
+
 Conjugate gradient for Hermitian positive definite matrices; optional positive
 real Jacobi diagonal. Reports the true residual and a termination reason.
 """

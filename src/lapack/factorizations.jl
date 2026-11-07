@@ -9,16 +9,24 @@ struct LUFactor{T,M<:AbstractMatrix{T}}
     info::Int
 end
 
-"""Partial-pivoted blocked LU. Trailing updates use this package's GEMM."""
+"""
+    lu_factor(A::AbstractMatrix{T}; blocksize=128, check=true, threaded=true, pivot=:partial) -> LUFactor
+
+Partial-pivoted blocked LU. Trailing updates use this package's GEMM.
+"""
 function lu_factor(A::AbstractMatrix{T};blocksize=128,check=true,threaded=true,pivot=:partial) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     pivot===:partial || return _pivot_lu_factor(A,pivot;check,threaded)
     Base.require_one_based_indexing(A)
     _lu_factor!(Matrix(A);blocksize,check,threaded)
 end
-"""In-place partial-pivoted blocked LU: F (a Matrix or a strided view) is
+"""
+    _lu_factor!(F::AbstractMatrix{T}; blocksize=128, check=true, threaded=true) -> LUFactor
+
+In-place partial-pivoted blocked LU: F (a Matrix or a strided view) is
 overwritten by the unit-lower and upper factors, and is the stored `factors`.
-The engine of lu_factor, which hands it a copy."""
+The engine of lu_factor, which hands it a copy.
+"""
 function _lu_factor!(F::AbstractMatrix{T};blocksize=128,check=true,threaded=true) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     Base.require_one_based_indexing(F)
@@ -190,7 +198,11 @@ struct CholeskyFactor{T,M<:AbstractMatrix{T}}
     L::M
 end
 
-"""Blocked LLᴴ Cholesky using the lower triangle; GEMM updates native panels."""
+"""
+    cholesky_factor(A::AbstractMatrix{T}; blocksize=nothing, threaded=true) -> CholeskyFactor
+
+Blocked LLᴴ Cholesky using the lower triangle; GEMM updates native panels.
+"""
 function cholesky_factor(A::AbstractMatrix{T};blocksize=nothing,threaded=true) where {T<:GenericFloat}
     F,_=_cholesky_factor_info(A;blocksize,threaded,check=true)
     F
@@ -219,9 +231,13 @@ function _cholesky_factor_info(A::AbstractMatrix{T};blocksize=nothing,threaded=t
     end
     _cholesky_factor_info!(L;blocksize,threaded,check)
 end
-"""In-place Cholesky of the lower triangle of L (a Matrix or a strided view):
+"""
+    _cholesky_factor!(L::AbstractMatrix{T}; blocksize=nothing, threaded=true) -> CholeskyFactor
+
+In-place Cholesky of the lower triangle of L (a Matrix or a strided view):
 L is overwritten by the factor, its strict upper triangle zeroed, and is the
-stored `L`. The engine of cholesky_factor, which hands it a copy."""
+stored `L`. The engine of cholesky_factor, which hands it a copy.
+"""
 function _cholesky_factor!(L::AbstractMatrix{T};blocksize=nothing,threaded=true) where {T<:GenericFloat}
     F,_=_cholesky_factor_info!(L;blocksize,threaded,check=true)
     F
@@ -294,7 +310,11 @@ struct QRFactor{T}
     tau::Vector{T}
 end
 
-"""Compact Householder QR for real/complex rectangular matrices (unpivoted)."""
+"""
+    qr_factor(A::AbstractMatrix{T}; blocksize=nothing, threaded=true, pivot=false) -> QRFactor
+
+Compact Householder QR for real/complex rectangular matrices (unpivoted).
+"""
 function qr_factor(A::AbstractMatrix{T};blocksize=nothing,threaded=true,pivot=false) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     pivot && return qr_pivoted(A;threaded)
@@ -396,7 +416,10 @@ end
 least_squares(A::AbstractMatrix,b::AbstractVecOrMat;kwargs...)=least_squares(qr_factor(A),b;kwargs...)
 solve(F::QRFactor,b::AbstractVecOrMat)=least_squares(F,b)
 
-"""Native mixed refinement with Float32 low factors and Float64 residuals.
+"""
+    mixed_solve(A::AbstractMatrix{T}, b::AbstractVecOrMat{T}; maxiter=10, rtol=1e-13, kwargs...) -> NamedTuple
+
+Native mixed refinement with Float32 low factors and Float64 residuals.
 See mixed_solve's extended implementation for diagnostics and family selection.
 """
 function mixed_solve(A::AbstractMatrix{T},b::AbstractVecOrMat{T};maxiter=10,rtol=1e-13,kwargs...) where {T<:Union{Float64,ComplexF64}}

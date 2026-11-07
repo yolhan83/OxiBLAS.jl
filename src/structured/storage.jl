@@ -55,7 +55,11 @@ struct BandedMatrix{T,V<:AbstractMatrix{T}} <: AbstractMatrix{T}
     upper::Bool
     unit::Bool
 end
-"""BLAS band storage: general A[i,j]=data[ku+1+i-j,j]."""
+"""
+    BandedMatrix(data, m; kl=0, ku=0, kind=:general, uplo=:U, unit=false)
+
+BLAS band storage: general A[i,j]=data[ku+1+i-j,j].
+"""
 function BandedMatrix(data::AbstractMatrix,m::Integer;kl=0,ku=0,kind=:general,uplo=:U,unit=false)
     Base.require_one_based_indexing(data)
     min(m,kl,ku)>=0 || throw(ArgumentError("negative band dimension"))

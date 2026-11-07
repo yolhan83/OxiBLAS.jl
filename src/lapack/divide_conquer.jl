@@ -149,7 +149,10 @@ function _cuppen(d,e,leafsize,budget,maxiter)
     EigenFactor(values,Q,leftresult.iterations+rightresult.iterations+1)
 end
 
-"""Cuppen divide-and-conquer eigenpairs of a real symmetric tridiagonal.
+"""
+    eigen_tridiagonal_dc(d::AbstractVector{R}, e::AbstractVector{R}; vectors=true, leafsize=16, threaded=true, maxiter=...) -> EigenFactor
+
+Cuppen divide-and-conquer eigenpairs of a real symmetric tridiagonal.
 Recursive blocks use independent storage; merges solve the secular rank-one
 problem, with deflation of repeated poles. `vectors=false` discards the vectors.
 """

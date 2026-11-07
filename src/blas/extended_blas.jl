@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 _generic_accum(::Type{T}) where T=T===Float16 ? Float32 : T===Complex{Float16} ? ComplexF32 : T
-"""Reusable tile accumulation buffers for extended GEMM. A shared context is
+"""
+    GenericWorkspace(::Type{T}; blocksize=32, workers=...)
+
+Reusable tile accumulation buffers for extended GEMM. A shared context is
 serialized; different worker buffers belong to different tasks. Float16 uses
 Float32 accumulators. Arbitrary floating types never enter native SIMD pointer kernels.
 """

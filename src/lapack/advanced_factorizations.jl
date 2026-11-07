@@ -230,7 +230,10 @@ function Base.getproperty(F::PivotedQRFactor,s::Symbol)
     s in (:Q,:R,:factors,:tau) && return getproperty(getfield(F,:qr),s)
     getfield(F,s)
 end
-"""Column-pivoted Householder QR; A[:,p]=Q*R. Column norms are downdated after
+"""
+    qr_pivoted(A::AbstractMatrix{T}; threaded=true) -> PivotedQRFactor
+
+Column-pivoted Householder QR; A[:,p]=Q*R. Column norms are downdated after
 each reflector and recomputed when cancellation makes the downdate unreliable,
 with LAPACK's geqp3/laqp2 criterion.
 """
@@ -272,7 +275,10 @@ function qr_pivoted(A::AbstractMatrix{T};threaded=true) where {T<:GenericFloat}
     end
     PivotedQRFactor(QRFactor(F,tau),p)
 end
-"""Rank-revealing QR basic least-squares solution (free pivoted variables zero).
+"""
+    least_squares(F::PivotedQRFactor, b::AbstractVecOrMat; rtol=eps(real(eltype(F.factors)))*max(size(F.factors)...)) -> AbstractVecOrMat
+
+Rank-revealing QR basic least-squares solution (free pivoted variables zero).
 For a rank-deficient problem this is a basic solution, not the minimum norm solution.
 """
 function least_squares(F::PivotedQRFactor,b::AbstractVecOrMat;rtol=eps(real(eltype(F.factors)))*max(size(F.factors)...))
@@ -336,7 +342,10 @@ function _symmetric_swap!(S,L,p,a,b,k)
     end
     p[a],p[b]=p[b],p[a]
 end
-"""Symmetric/Hermitian indefinite LDL factorization with Bunch–Kaufman
+"""
+    ldlt_factor(A::AbstractMatrix{T}; uplo=:L, hermitian=true, pivot=:bunchkaufman, threaded=true, blocksize=nothing) -> LDLTFactor
+
+Symmetric/Hermitian indefinite LDL factorization with Bunch–Kaufman
 1×1/2×2 diagonal pivot selection. Only the selected input triangle is read.
 Set pivot=:none for unpivoted LDL. A[p,p]=L*D*(hermitian ? L' : transpose(L)).
 """
@@ -549,7 +558,10 @@ function _ldl_solve!(F::LDLFactor,X::AbstractVecOrMat)
     X
 end
 
-"""Hermitian-definite generalized eigenproblem A*V=B*V*Diagonal(values).
+"""
+    eigen_generalized(A::AbstractMatrix{T}, B::AbstractMatrix{T}; uplo=:U, vectors=true, threaded=true, kwargs...) -> EigenFactor
+
+Hermitian-definite generalized eigenproblem A*V=B*V*Diagonal(values).
 B must be positive definite. V'BV=I. Uses native Cholesky, TRSM and EVD.
 """
 function eigen_generalized(A::AbstractMatrix{T},B::AbstractMatrix{T};uplo=:U,vectors=true,threaded=true,kwargs...) where {T<:GenericFloat}
@@ -570,7 +582,10 @@ function eigen_generalized(A::AbstractMatrix{T},B::AbstractMatrix{T};uplo=:U,vec
     E
 end
 
-"""Equilibrated LU expert solve with componentwise backward error and iterative
+"""
+    expert_solve(A::AbstractMatrix{T}, b::AbstractVecOrMat{T}; maxiter=8, rtol=8eps(real(T)), equilibrate=true, pivot=:partial, threaded=true) -> NamedTuple
+
+Equilibrated LU expert solve with componentwise backward error and iterative
 refinement. Returns diagnostics and never silently asserts convergence.
 """
 function expert_solve(A::AbstractMatrix{T},b::AbstractVecOrMat{T};maxiter=8,rtol=8eps(real(T)),equilibrate=true,pivot=:partial,threaded=true) where {T<:GenericFloat}

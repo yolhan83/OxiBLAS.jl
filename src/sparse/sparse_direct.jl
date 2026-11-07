@@ -3,7 +3,10 @@
 # CSCMatrix(S) wraps their storage without copying (sparse_arrays.jl).
 const NativeSparse=Union{CSRMatrix,CSCMatrix,COOMatrix,ExtendedSparse,SparseMatrixCSC}
 
-"""Native sparse triangular substitution, with transpose/adjoint and unit
+"""
+    sparse_triangular_solve(A::NativeSparse, b::AbstractVecOrMat; uplo=:L, trans=:N, unit=false) -> AbstractVecOrMat
+
+Native sparse triangular substitution, with transpose/adjoint and unit
 options. The compressed storage of the operand is used as it is (CSR rows or
 CSC columns, a SparseMatrixCSC shared without copy); other formats are
 converted to CSR once. A zero pivot throws SingularException before the
@@ -149,7 +152,10 @@ function _rows_to_csr(rows,::Type{T},n) where T
     end
     CSRMatrix(m,n,ptr,cols,values)
 end
-"""Sparse LU with threshold partial row pivoting, A[p,q] = L·U.
+"""
+    sparse_lu(A::NativeSparse; droptol=zero(real(eltype(A))), maxfill=typemax(Int), pivot_threshold=one(real(eltype(A))), ordering=:auto) -> SparseLUFactor
+
+Sparse LU with threshold partial row pivoting, A[p,q] = L·U.
 
 `ordering` (exact factor):
 - `:auto` (default): as `multifrontal_lu` (UMFPACK's symmetric strategy for a
@@ -282,7 +288,10 @@ struct SparseCholeskyFactor{T,R}
     drop_tolerance::R
     incomplete::Bool
 end
-"""Sparse Cholesky in the natural order, A = L·Lᴴ. Fill is stored sparsely,
+"""
+    sparse_cholesky(A::NativeSparse; uplo=:L, fill=:full, droptol=zero(real(eltype(A)))) -> SparseCholeskyFactor
+
+Sparse Cholesky in the natural order, A = L·Lᴴ. Fill is stored sparsely,
 never in a dense matrix. The exact factor goes through the supernodal code of
 `multifrontal_cholesky` (natural ordering; the postorder is undone);
 `fill=:zero` gives IC(0) and positive droptol threshold IC, by left-looking

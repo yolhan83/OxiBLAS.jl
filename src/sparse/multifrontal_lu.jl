@@ -58,7 +58,10 @@ function _row_element_lu_tree(C,q,maxwidth)
     end
     (;original,columns,counts,nodes,parents=group_parents,children=group_children,heights,iq)
 end
-"""Row-element multifrontal LU with separate row and column permutations.
+"""
+    multifrontal_lu(A::NativeSparse; ordering=:auto, maxwidth=nothing, pivot_threshold=0.1, threaded=true, check=true) -> MultifrontalLUFactor
+
+Row-element multifrontal LU with separate row and column permutations.
 A[p,q]=L*U. Original row elements and child Schur contributions are assembled
 once, factored in fully summed panels and forwarded through an assembly tree.
 Threshold partial row pivoting searches all candidate rows of the front.

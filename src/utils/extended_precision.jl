@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Compatibility entry point for GEMM with caller-provided floating types.
+"""
+    gemm_extended!(C, A, B, alpha=1, beta=0; kwargs...) -> C
+
+Compatibility entry point for GEMM with caller-provided floating types.
 Native Float32/64 retain specialized dispatch; other concrete AbstractFloat
 and complex floating types use generic Julia arithmetic. No scalar is wrapped
 or reimplemented by OxiBLAS. Float16 GEMM accumulates in Float32.
@@ -17,7 +20,10 @@ end
     im,ci=_compensated_sum_step(imag(sum),imag(correction),imag(value))
     complex(re,im),complex(cr,ci)
 end
-"""Compensated dot product in a caller-selectable accumulation type.
+"""
+    dot_extended(x, y; conjugate=false, accumulator_type=nothing)
+
+Compensated dot product in a caller-selectable accumulation type.
 Float16/32 default to Float32/64; other providers preserve their element type.
 accumulator_type can explicitly select BigFloat, Double64, Float128, etc.
 Products are rounded by that type; no hidden fixed extended scalar is used.

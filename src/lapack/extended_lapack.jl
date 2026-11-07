@@ -224,7 +224,10 @@ function _mixed_precision_impl(A::AbstractMatrix{T},b::AbstractVecOrMat{T};maxit
       finite=all(isfinite,X) && isfinite(error),
       reason=!all(isfinite,X) || !isfinite(error) ? :nonfinite_iteration : used_fallback ? :working_factor_fallback : error<=rtol ? :converged : :iteration_limit)
 end
-"""Mixed LU/Cholesky/LDL/QR with an explicitly selected low type and generic
+"""
+    mixed_solve(A::AbstractMatrix{T}, b::AbstractVecOrMat{T}; kwargs...) -> NamedTuple
+
+Mixed LU/Cholesky/LDL/QR with an explicitly selected low type and generic
 residuals and updates. Generic inputs preserve their type by default. Reports convergence, metric, low_type and fallback provenance.
 QR reports a normalized normal residual, not an original-system error bound.
 """
@@ -235,7 +238,10 @@ function mixed_solve(A::AbstractMatrix{T},b::AbstractVecOrMat{T};lowtype=nothing
     _mixed_precision_impl(W.(A),W.(b);lowtype=Low,kwargs...)
 end
 
-"""Generic matrix exponential using a scaled Taylor series in T. The order is
+"""
+    matrix_exp(A::AbstractMatrix{T}; threaded=true, maxiter::Integer=10000) -> Matrix{T}
+
+Generic matrix exponential using a scaled Taylor series in T. The order is
 chosen by convergence in the scalar provider's active precision, not a fixed
 Float64 Padé truncation. Requires +,-,*,/,abs,eps,log2,ceil,ldexp and comparison.
 Hardware types retain their more specific Padé implementation.

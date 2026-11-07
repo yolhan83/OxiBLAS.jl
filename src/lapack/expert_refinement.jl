@@ -36,7 +36,10 @@ end
 _adjoint_solve(F::Union{LUFactor,CompleteLUFactor},b)=solve_transposed(F,b)
 _adjoint_solve(F::CholeskyFactor,b)=solve(F,b)
 _adjoint_solve(F::LDLFactor,b)=F.hermitian ? solve(F,b) : conj.(solve(F,conj.(b)))
-"""Hager–Higham estimate of ||A^-1||_1 using native normal/adjoint solves.
+"""
+    inverse_norm_estimate(F, ::Type{T}, n::Integer; maxiter=8) -> real(T)
+
+Hager–Higham estimate of ||A^-1||_1 using native normal/adjoint solves.
 This is an estimate, not a certified upper bound.
 """
 function inverse_norm_estimate(F,::Type{T},n::Integer;maxiter=8) where {T<:GenericFloat}
@@ -76,7 +79,10 @@ function _refinement_residual!(residual,A,X,B)
     end
     error
 end
-"""Iterative refinement in the generic work type; Float32 residuals widen to Float64.
+"""
+    refine_solve(A::AbstractMatrix{T}, F, b::AbstractVecOrMat{T}; maxiter=8, rtol=8eps(real(T))) -> NamedTuple
+
+Iterative refinement in the generic work type; Float32 residuals widen to Float64.
 Returns componentwise backward error, true residual norm and estimated forward
 error/reciprocal condition. These condition estimates are explicitly non-certified.
 """

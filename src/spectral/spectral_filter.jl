@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Gershgorin spectral enclosure estimate for a finite Hermitian matrix.
+"""
+    hermitian_spectral_bounds(A; check_hermitian=true) -> (low, high)
+
+Gershgorin spectral enclosure estimate for a finite Hermitian matrix.
 Computed in working precision with a rounding margin, not directed-rounding
 interval arithmetic. An exactly diagonal matrix retains its exact extrema.
 """
@@ -30,7 +33,10 @@ function hermitian_spectral_bounds(A::AbstractMatrix{T};check_hermitian=true) wh
     low,high
 end
 
-"""Owned Chebyshev window filter of a Hermitian matrix, with Jackson damping
+"""
+    ChebyshevFilter{T,R}
+
+Owned Chebyshev window filter of a Hermitian matrix, with Jackson damping
 by default. The sparse matrix and its scaled copy are retained. Spectral bounds
 provided by the caller assert an enclosure; they are not independently certified.
 """
@@ -86,7 +92,11 @@ function polynomial_filter(A::AbstractMatrix{T},low::Real,high::Real;degree::Int
     ChebyshevFilter(C,scaled,coefficients,(lo,hi),(lower,upper),scale,center,radius,damping,kind)
 end
 
-"""Evaluate the scalar polynomial response (no interval membership guarantee)."""
+"""
+    filter_response(P::ChebyshevFilter, x) -> Real
+
+Evaluate the scalar polynomial response (no interval membership guarantee).
+"""
 function filter_response(P::ChebyshevFilter{T,R},x::Real) where {T,R}
     value=R(x); isfinite(value) || throw(ArgumentError("finite response argument required"))
     length(P.coefficients)==1 && return P.coefficients[1]
@@ -100,7 +110,10 @@ function filter_response(P::ChebyshevFilter{T,R},x::Real) where {T,R}
     result
 end
 
-"""Reusable four-buffer Chebyshev recurrence workspace. Sharing serializes
+"""
+    FilterWorkspace(P::ChebyshevFilter; columns=1)
+
+Reusable four-buffer Chebyshev recurrence workspace. Sharing serializes
 calls; metadata and native GEMM/SpMM packing may still allocate.
 """
 mutable struct FilterWorkspace{T}
@@ -116,7 +129,10 @@ function FilterWorkspace(P::ChebyshevFilter{T};columns::Integer=1) where T
     FilterWorkspace(ntuple(_->Matrix{T}(undef,n,columns),4),n,Int(columns),ReentrantLock(),false)
 end
 
-"""Apply the window polynomial to vectors or column blocks.
+"""
+    apply_filter!(Y, P::ChebyshevFilter, X; α=1, β=0, workspace=nothing, threaded=true) -> Y
+
+Apply the window polynomial to vectors or column blocks.
 The result is complete before aliased output is changed. alpha=0 avoids reading
 input values; beta=0 avoids reading previous output values. Plan/workspace
 storage aliases are rejected. Nonfinite input/recurrence values are rejected.

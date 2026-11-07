@@ -198,7 +198,10 @@ function _selected_empty(::Type{T},m,n,vectors) where T
     SVDFactor{T,R}(vectors ? zeros(T,m,0) : nothing,R[],vectors ? zeros(T,0,n) : nothing,0)
 end
 
-"""Genuine selected dense SVD, with 1-based descending `indices`, or the
+"""
+    svd_selected(A::AbstractMatrix{T}; indices=nothing, interval=nothing, vectors=true, algorithm=:selected, representation=:dilation, full=false, maxiter=..., maxinverse=100, rtol=..., atol=..., threaded=true, diagnostics=nothing) -> SVDFactor
+
+Genuine selected dense SVD, with 1-based descending `indices`, or the
 half-open value interval `(low,high]`. Only the requested distinct ranks are
 bisected and only their vectors are computed/backtransformed. Index order and
 duplicates are preserved. With neither selector, all min(m,n) values are requested.

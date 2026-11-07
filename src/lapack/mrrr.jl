@@ -204,7 +204,10 @@ function _mrrr_block(d,e,maxdepth)
     end
     values,vectors
 end
-"""MRRR eigenpairs with splitting, robust shifted LDL representations,
+"""
+    eigen_tridiagonal_mrrr(d::AbstractVector{R}, e::AbstractVector{R}; vectors=true, indices=nothing, interval=nothing, threaded=true, maxdepth=64) -> Tuple{Vector{R}, Matrix{R}}
+
+MRRR eigenpairs with splitting, robust shifted LDL representations,
 differential qd and twisted vectors. A failed representation falls back to the
 native implicit-QR block solver. Selected index/range output is supported.
 """

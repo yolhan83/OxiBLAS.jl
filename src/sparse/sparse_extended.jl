@@ -528,7 +528,10 @@ struct ILUFactor{T}
     factors::CSRMatrix{T,Int}
     diagonal::Vector{Int}
 end
-"""Zero-fill incomplete LU on the input sparsity pattern. Requires explicit,
+"""
+    ilu0(A::Union{CSRMatrix{T}, CSCMatrix{T}, COOMatrix{T}}) -> ILUFactor
+
+Zero-fill incomplete LU on the input sparsity pattern. Requires explicit,
 nonzero pivots; numerical breakdown is reported rather than silently patched.
 """
 function ilu0(A::Union{CSRMatrix{T},CSCMatrix{T},COOMatrix{T}}) where T
@@ -599,7 +602,10 @@ function _true_residual!(r,A,x,b,temp)
     nrm2(r)
 end
 
-"""Restarted, left-preconditioned GMRES with two-pass modified Gram–Schmidt.
+"""
+    gmres(A::AbstractMatrix{T}, b::AbstractVector{T}; x0=zeros(T,length(b)), restart=min(30,max(1,length(b))), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Restarted, left-preconditioned GMRES with two-pass modified Gram–Schmidt.
 Convergence is checked against the true, unpreconditioned residual every restart.
 `preconditioner` may be nothing, a diagonal vector, or an ILUFactor.
 """
@@ -655,7 +661,10 @@ function gmres(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),r
     (;x,converged=false,iterations,residual,reason=:maxiter)
 end
 
-"""BiCGStab for real/complex nonsymmetric systems with right preconditioning.
+"""
+    bicgstab(A::AbstractMatrix{T}, b::AbstractVector{T}; x0=zeros(T,length(b)), maxiter=2length(b), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+BiCGStab for real/complex nonsymmetric systems with right preconditioning.
 Reports true residuals and explicit breakdown/maxiter termination.
 """
 function bicgstab(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)),maxiter=2length(b),
@@ -712,7 +721,10 @@ function bicgstab(A::AbstractMatrix{T},b::AbstractVector{T};x0=zeros(T,length(b)
     (;x,converged=false,iterations=maxiter,residual,reason=:maxiter)
 end
 
-"""Fully reorthogonalized Hermitian Lanczos projection and Ritz eigenpairs.
+"""
+    lanczos(A::AbstractMatrix{T}; nev=1, maxiter=min(size(A,1),max(20,4nev)), which=:largest, start=..., rtol=sqrt(eps(real(T)))) -> NamedTuple
+
+Fully reorthogonalized Hermitian Lanczos projection and Ritz eigenpairs.
 Returns explicit residuals and convergence flags. `which` is :smallest or
 :largest algebraic. A supplied start vector determines the explored subspace.
 """

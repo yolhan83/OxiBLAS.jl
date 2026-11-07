@@ -71,7 +71,10 @@ function _arnoldi_keep(F,keep,capacity,which,target,locked_values,threaded)
     _block_lift(F.basis,coefficients;threaded),_block_lift(F.images,coefficients;threaded),total
 end
 
-"""Thick-restarted block Arnoldi / Krylov-Schur for general dense or sparse A.
+"""
+    thick_restart_arnoldi(A; nev=1, subspace=..., keep=..., maxrestarts=30, kwargs...)
+
+Thick-restarted block Arnoldi / Krylov-Schur for general dense or sparse A.
 Retains whole real Schur blocks and cached operator images. `locking=true`
 soft-locks wanted converged Ritz pairs by retaining their Schur subspace; it
 never projects with nonorthogonal individual eigenvectors. `:selective` uses

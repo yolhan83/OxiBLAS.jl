@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Graph convention used by upstream graph::bandwidth_profile: bandwidth is
+"""
+    graph_bandwidth_profile(A)
+
+Graph convention used by upstream graph::bandwidth_profile: bandwidth is
 max(abs(i-j)), profile is the sum of each row's max-column minus min-column,
 including the diagonal location in the envelope, and average_bandwidth is
 profile/n. Distinct from bandwidth_profile's full matrix width/lower envelope.

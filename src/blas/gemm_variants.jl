@@ -18,7 +18,10 @@ function _cache_recursive!(C,A,B,alpha,beta,leafsize,options)
     end
     C
 end
-"""Cache-oblivious largest-dimension recursion with native SIMD leaf kernels.
+"""
+    gemm_cache_oblivious!(C, A, B, α=1, β=0; transA=:N, transB=:N, leafsize=64, kwargs...) -> C
+
+Cache-oblivious largest-dimension recursion with native SIMD leaf kernels.
 Parallel output regions have task-owned packing panels and no nested tasks.
 """
 function gemm_cache_oblivious!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},alpha0=one(T),beta0=zero(T);
@@ -131,10 +134,17 @@ function _gemm_seven!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatri
     end
     C
 end
-"""Native Strassen seven-product recursion, including odd-dimension fringes.
+"""
+    gemm_strassen!(C, A, B, α=1, β=0; kwargs...) -> C
+
+Native Strassen seven-product recursion, including odd-dimension fringes.
 This trades additional workspace and rounding error for fewer products; select
 it explicitly after checking the application's accuracy and performance needs.
 """
 gemm_strassen!(C,A,B,alpha=one(eltype(C)),beta=zero(eltype(C));kwargs...)=_gemm_seven!(C,A,B,alpha,beta,:strassen;kwargs...)
-"""Native Strassen–Winograd addition schedule with seven recursive products."""
+"""
+    gemm_winograd!(C, A, B, α=1, β=0; kwargs...) -> C
+
+Native Strassen–Winograd addition schedule with seven recursive products.
+"""
 gemm_winograd!(C,A,B,alpha=one(eltype(C)),beta=zero(eltype(C));kwargs...)=_gemm_seven!(C,A,B,alpha,beta,:winograd;kwargs...)

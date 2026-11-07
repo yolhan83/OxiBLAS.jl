@@ -100,7 +100,11 @@ const _NRM2_BLOCK=1024
     s1>=s2 ? (s1,q1+q2*(s2/s1)^2) : (s2,q2+q1*(s1/s2)^2)
 end
 
-"""Euclidean norm with scaled sum of squares; avoids spurious overflow/underflow."""
+"""
+    nrm2(x) -> Real
+
+Euclidean norm with scaled sum of squares; avoids spurious overflow/underflow.
+"""
 function nrm2(x::AbstractArray{T}) where T
     R=typeof(real(zero(T)))
     total=zero(R); totalssq=one(R)
@@ -156,7 +160,11 @@ function rot!(x::AbstractVector,y::AbstractVector,c::Real,s::Number)
     end
     (x,y)
 end
-"""Return (c,s,r), c*a+s*b=r and c*b-conj(s)*a=0 (real c)."""
+"""
+    rotg(a, b) -> (c, s, r)
+
+Return (c,s,r), c*a+s*b=r and c*b-conj(s)*a=0 (real c).
+"""
 rotg(a::T,b::T) where {T<:Number}=_rotg_generic(a,b)
 function _rotg_generic(a::T,b::T) where {T<:Number}
     R=typeof(real(zero(T)))
@@ -197,13 +205,21 @@ function _wide_dot(x,y,initial)
     s
 end
 
-"""Float32-input inner product, products and accumulation in Float64."""
+"""
+    dsdot(x, y) -> Float64
+
+Float32-input inner product, products and accumulation in Float64.
+"""
 function dsdot(x::AbstractVector{Float32},y::AbstractVector{Float32})
     _same_length(x,y)
     _wide_dot(x,y,0.0)
 end
 
-"""`sdsdot(alpha::Float32,x,y)` accumulates alpha and Float32 products in Float64, then rounds once to Float32."""
+"""
+    sdsdot(alpha, x, y) -> Float32
+
+`sdsdot(alpha::Float32,x,y)` accumulates alpha and Float32 products in Float64, then rounds once to Float32.
+"""
 function sdsdot(alpha::Float32,x::AbstractVector{Float32},y::AbstractVector{Float32})
     _same_length(x,y)
     Float32(_wide_dot(x,y,alpha))

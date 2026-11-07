@@ -88,7 +88,10 @@ function _diagonal_interval(C,bands,low,high,boundary_tol,vectors;exact_endpoint
       certified_count=iszero(boundary_tol) && exact_endpoints,iterations=0,basis_dimension=0,matrix_products=0,method=:diagonal,reason=:converged)
 end
 
-"""Find verified Hermitian eigenpairs in the closed interval [low,high].
+"""
+    eigenvalues_in_interval(A, low, high; method=:auto, vectors=true, kwargs...)
+
+Find verified Hermitian eigenpairs in the closed interval [low,high].
 :auto handles diagonal/tridiagonal structure directly, otherwise builds one
 bounded block Krylov projection. General partial projections never assert a
 complete interval count. boundary_tol explicitly widens numerical selection.
@@ -138,7 +141,10 @@ function _interval_sturm(d,e,x,inclusive)
     end
     count
 end
-"""Count with provenance. Returns a NamedTuple, not an unqualified integer.
+"""
+    count_eigenvalues_in_interval(A, low, high; method=:auto, boundary_tol=0, kwargs...)
+
+Count with provenance. Returns a NamedTuple, not an unqualified integer.
 Diagonal counts with boundary_tol=0 and exact endpoint conversion are exact
 comparisons. Tridiagonal counts
 use scaled Sturm recurrences in working precision (not certified intervals).
@@ -182,7 +188,10 @@ function _block_apply!(Y,A::_FilteredOperator,X;threaded=true)
     Y
 end
 
-"""Filtered block Lanczos with original-operator Rayleigh–Ritz extraction.
+"""
+    polynomial_filtered_eigenvalues(A, low, high, nev=...; degree=20, kwargs...)
+
+Filtered block Lanczos with original-operator Rayleigh–Ritz extraction.
 Retains multiplicities by vector subspaces, never by deduplicating equal values.
 Requested-pair convergence does not imply completeness of the interval. Constant
 filters fall back to ordinary block Lanczos. Restarts retain original Ritz

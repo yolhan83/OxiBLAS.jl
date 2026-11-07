@@ -296,12 +296,18 @@ function _md_pop!(h)
     end
     x
 end
-"""BFS level-separator nested dissection, with exact local minimum-degree
+"""
+    nested_dissection(A::NativeSparse; kwargs...) -> Vector{Int}
+
+BFS level-separator nested dissection, with exact local minimum-degree
 leaves, disconnected-component handling and an explicit recursion depth cap.
 Use return_tree=true to inspect separators and achieved size balance.
 """
 nested_dissection(A::NativeSparse;kwargs...)=_level_nested_dissection(A;kwargs...)
-"""Symbolic Cholesky pattern and elimination forest in the chosen ordering.
+"""
+    symbolic_cholesky(A::NativeSparse; ordering=:natural, uplo=nothing) -> NamedTuple
+
+Symbolic Cholesky pattern and elimination forest in the chosen ordering.
 By default the full pattern is symmetrized; uplo=:L/:U selects one triangle
 for the upstream symbolic selected-triangle contract. Elimination tree,
 children, postorder and the row structure of every factor column are
@@ -328,7 +334,10 @@ function bandwidth_profile(A::NativeSparse)
     end
     (;lower,upper,bandwidth=lower+upper+1,profile)
 end
-"""Maximum-cardinality row/column matching by layered, iterative Hopcroft–Karp.
+"""
+    bipartite_matching(A::NativeSparse) -> Tuple{Vector{Int}, Vector{Int}}
+
+Maximum-cardinality row/column matching by layered, iterative Hopcroft–Karp.
 Returns row/column partner arrays (0 means unmatched), retaining the existing
 rectangular incidence interpretation. Use bipartite_graph_matching for a
 square adjacency graph interpreted through an undirected two-coloring.

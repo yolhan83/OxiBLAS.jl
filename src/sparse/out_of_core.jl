@@ -259,13 +259,19 @@ function _out_of_core(A,kind;blocksize::Integer=128,memory_budget::Integer=64*10
         close(F); rethrow()
     end
 end
-"""Native tiled disk LU with global panel row pivoting. The byte budget covers
+"""
+    out_of_core_lu(A::NativeSparse; kwargs...) -> OutOfCoreFactor
+
+Native tiled disk LU with global panel row pivoting. The byte budget covers
 numeric panel/tile/packing payload, not CSR input, returned solutions, metadata
 or process RSS. Tile size shrinks to fit; an insufficient budget is rejected.
 Call close on the returned owned cache when finished; GC cleanup is best effort.
 """
 out_of_core_lu(A::NativeSparse;kwargs...)=_out_of_core(A,:lu;kwargs...)
-"""Native tiled disk Hermitian Cholesky, with the same cache/budget contract as
+"""
+    out_of_core_cholesky(A::NativeSparse; kwargs...) -> OutOfCoreFactor
+
+Native tiled disk Hermitian Cholesky, with the same cache/budget contract as
 out_of_core_lu. Only uplo is read. Cache files are local native-endian tiles,
 checksummed and shape/type checked; they are not portable persistent checkpoints.
 """

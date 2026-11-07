@@ -28,7 +28,10 @@ function _block_full_rank(A)
     F=qr_pivoted(A;threaded=false); d=[abs(F.factors[i,i]) for i in 1:min(size(A)...)]; scale=maximum(d;init=zero(eltype(d)))
     all(x->x>64eps(real(eltype(A)))*max(size(A)...)*scale,d)
 end
-"""Coupled block preconditioned CG for multiple Hermitian positive-definite
+"""
+    block_cg(A, B; x0=zeros(T,size(B)), maxiter=2size(A,1), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Coupled block preconditioned CG for multiple Hermitian positive-definite
 systems. Rank loss in the block Gram system triggers explicit scalar PCG
 continuation from the current iterates, rather than inverting a singular block.
 """
@@ -64,7 +67,10 @@ function block_cg(A::AbstractMatrix{T},B::AbstractMatrix{T};x0=zeros(T,size(B)),
     (;x=X,converged=false,residuals,iterations,fallback=false)
 end
 
-"""Restarted right-preconditioned block GMRES with block Arnoldi and native
+"""
+    block_gmres(A, B; x0=zeros(T,size(B)), restart=10, maxiter=2size(A,1), rtol=sqrt(eps(real(T))), atol=zero(real(T)), preconditioner=nothing) -> NamedTuple
+
+Restarted right-preconditioned block GMRES with block Arnoldi and native
 minimum-norm projected least squares. Rank loss falls back to independent
 flexible GMRES continuations; the returned `fallback` flag makes this explicit.
 `maxiter` counts block Arnoldi steps.

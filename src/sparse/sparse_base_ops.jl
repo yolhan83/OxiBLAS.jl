@@ -42,9 +42,13 @@ function _index_table(s,n)
 end
 _index_length(s::Colon,n)=n
 _index_length(s,n)=length(s)
-"""A[I...] with integers, ranges, vectors and colons on a SparseTensor:
+"""
+    _sparse_getindex(A::SparseTensor{T,N}, I::Tuple) -> SparseTensor
+
+A[I...] with integers, ranges, vectors and colons on a SparseTensor:
 stored entries are mapped through the selected positions (an index may
-repeat; an integer index drops its dimension)."""
+repeat; an integer index drops its dimension).
+"""
 function _sparse_getindex(A::SparseTensor{T,N},I::Tuple) where {T,N}
     length(I)==N || throw(ArgumentError("expected $N indices"))
     for d in 1:N
@@ -135,12 +139,16 @@ function Base.setindex!(A::COOMatrix,v,i::Integer,j::Integer)
 end
 
 # ---- broadcast and map -----------------------------------------------------------------
-"""Broadcast style of the OxiBLAS sparse types. Same-shape sparse operands
+"""
+    OxiSparseStyle{N} <: Broadcast.AbstractArrayStyle{N}
+
+Broadcast style of the OxiBLAS sparse types. Same-shape sparse operands
 with scalars: a function with f(0,…,0)==0 gives a sparse result over the
 union of the stored patterns (computed zeros dropped, as SparseArrays does);
 any other function gives a dense result filled with f(0,…,0). Dense
 operands or size-1 broadcasting give a dense result (the sparse operands are
-expanded by OxiBLAS's own conversion)."""
+expanded by OxiBLAS's own conversion).
+"""
 struct OxiSparseStyle{N} <: Broadcast.AbstractArrayStyle{N} end
 OxiSparseStyle{N}(::Val{M}) where {N,M}=OxiSparseStyle{M}()
 Broadcast.BroadcastStyle(::Type{<:_OxiSparse})=OxiSparseStyle{2}()
@@ -339,8 +347,12 @@ function _sparse_findall(f,A)
     sel=[T.indices[p] for p in eachindex(T.values) if f(T.values[p])]
     ndims(A)==1 ? sel : [CartesianIndices(T.dims)[i] for i in sel]
 end
-"""Stored entries (explicit zeros included) as row indices, column indices and
-values, in column-major order."""
+"""
+    findnz(A::_OxiSparse) -> Tuple{Vector{Int}, Vector{Int}, Vector}
+
+Stored entries (explicit zeros included) as row indices, column indices and
+values, in column-major order.
+"""
 function SparseArrays.findnz(A::_OxiSparse)
     T=_coo(A); m=size(A,1)
     ([(i-1)%m+1 for i in T.indices],[(i-1)÷m+1 for i in T.indices],copy(T.values))
@@ -385,7 +397,11 @@ _LA.triu(A::Union{_OxiSparse,SparseTensor{<:Any,2}},k::Integer=0)=_LA.triu!(_spa
 _LA.tril(A::Union{_OxiSparse,SparseTensor{<:Any,2}},k::Integer=0)=_LA.tril!(_sparse_mutable_copy(A),k)
 _sparse_mutable_copy(A::_MutableSparse)=copy(A)
 _sparse_mutable_copy(A)=CSRMatrix(A)
-"""Diagonal k as a SparseTensor of order 1 (an AbstractSparseVector)."""
+"""
+    diag(A::Union{_OxiSparse, SparseTensor{<:Any,2}}, k::Integer=0) -> SparseTensor
+
+Diagonal k as a SparseTensor of order 1 (an AbstractSparseVector).
+"""
 function _LA.diag(A::Union{_OxiSparse,SparseTensor{<:Any,2}},k::Integer=0)
     m,n=size(A); len=max(0,k>=0 ? min(m,n-k) : min(m+k,n))
     T=_coo(A); keys=Int[]; vals=eltype(A)[]
@@ -445,7 +461,11 @@ function _LA.dot(A::_OxiAll,B::StridedArray)
     sum(p->_LA.dot(T.values[p],B[T.indices[p]]),eachindex(T.values);init=zero(promote_type(eltype(A),eltype(B))))
 end
 _LA.dot(A::StridedArray,B::_OxiAll)=conj(_LA.dot(B,A))
-"""dot(x,A,y)=Σ conj(x[i]) a_ij y[j] over the stored entries of A."""
+"""
+    dot(x::AbstractVector, A::Union{_OxiSparse, SparseTensor{<:Any,2}}, y::AbstractVector) -> Number
+
+dot(x,A,y)=Σ conj(x[i]) a_ij y[j] over the stored entries of A.
+"""
 function _LA.dot(x::AbstractVector,A::Union{_OxiSparse,SparseTensor{<:Any,2}},y::AbstractVector)
     (length(x),length(y))==size(A) || throw(DimensionMismatch("dot(x,A,y): dimensions differ"))
     T=_coo(A); s=zero(promote_type(eltype(x),eltype(A),eltype(y)))

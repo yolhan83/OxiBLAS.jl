@@ -33,7 +33,10 @@ function _matching_weight(value,mode)
     weight
 end
 
-"""Weighted row/column bipartite matching on the nonzero pattern of A.
+"""
+    weighted_bipartite_matching(A; objective=:cardinality, weight=:auto)
+
+Weighted row/column bipartite matching on the nonzero pattern of A.
 objective=:cardinality first maximizes cardinality, then total weight;
 :weight permits unmatched vertices to maximize weight (zero-cost ties may
 increase cardinality). weight=:auto uses signed real values or complex abs;
@@ -117,7 +120,11 @@ function _weighted_assignment(C,weights,objective,mode)
       objective,weight_mode=mode,weight_scale=scale,augmentations,optimality=:working_precision)
 end
 
-"""Two-color the undirected off-diagonal pattern (diagonal entries ignored)."""
+"""
+    bipartite_coloring(A)
+
+Two-color the undirected off-diagonal pattern (diagonal entries ignored).
+"""
 function bipartite_coloring(A::NativeSparse)
     graph=_sparse_graph(A); colors=zeros(Int,length(graph)); bipartite=true
     for start in eachindex(graph)
@@ -138,7 +145,10 @@ function bipartite_coloring(A::NativeSparse)
       right=bipartite ? findall(==(2),colors) : Int[])
 end
 
-"""Weighted matching of a square bipartite adjacency graph. Returns nothing
+"""
+    weighted_graph_matching(A; objective=:weight, weight=:auto)
+
+Weighted matching of a square bipartite adjacency graph. Returns nothing
 for a non-bipartite pattern. Undirected weights use max of the two transformed
 directions, explicitly handling one-triangle/asymmetric storage.
 """
@@ -185,13 +195,20 @@ function weighted_graph_matching(A::NativeSparse;objective=:weight,weight=:auto)
       weight_overflow=result.weight_overflow,objective,weight_mode=mode,optimality=result.optimality)
 end
 
-"""Off-diagonal undirected degrees; diagonal entries and numerical zeros ignored."""
+"""
+    degree_sequence(A) -> Vector{Int}
+
+Off-diagonal undirected degrees; diagonal entries and numerical zeros ignored.
+"""
 degree_sequence(A::NativeSparse)=length.(_sparse_graph(A))
 function is_structurally_symmetric(A::NativeSparse)
     graph=_sparse_graph(A;symmetric=false)
     all(i in graph[j] for i in eachindex(graph) for j in graph[i])
 end
-"""Pseudo-peripheral vertex in the starting connected component. Empty graphs
+"""
+    pseudo_peripheral_vertex(A; start=nothing) -> Int
+
+Pseudo-peripheral vertex in the starting connected component. Empty graphs
 return 0; the iteration alternates minimum-degree vertices in the farthest BFS
 level until its depth stops increasing. No global-diameter guarantee.
 """

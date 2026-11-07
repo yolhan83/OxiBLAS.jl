@@ -38,7 +38,10 @@ function _gk_arrays(w)
     (w.U,w.V,w.projected,w.left,w.right,w.coefficients,w.triangular,w.permutation,
      w.ritzU,w.ritzV,w.rows,w.sigma,w.left_errors,w.right_errors)
 end
-"""Owned numeric payload bytes (including packing); excludes outputs, sparse
+"""
+    sparse_svd_workspace_bytes(w::SparseSVDWorkspace) -> Int
+
+Owned numeric payload bytes (including packing); excludes outputs, sparse
 input, locks/headers, transient small projected factorizations and task metadata.
 """
 function sparse_svd_workspace_bytes(w::SparseSVDWorkspace)
@@ -220,7 +223,10 @@ function _gk_ritz!(A,w,cycle,rank,singular_tol,rtol,atol,b,threaded)
     (;q,converged=q==rank && all(flags),flags,small,selected,verification=2q)
 end
 
-"""Sparse singular triplets with bounded two-sided Golub-Kahan bases.
+"""
+    sparse_svd_lanczos(A, rank; algorithm=:golub_kahan, subspace=..., kwargs...)
+
+Sparse singular triplets with bounded two-sided Golub-Kahan bases.
 `workspace` reuses basis, projection, block scratch, Ritz and packing storage;
 results own their arrays. `algorithm=:dilation` explicitly retains the prior
 Hermitian-dilation solver. No automatic normal-matrix/full-spectrum fallback.

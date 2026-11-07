@@ -47,7 +47,11 @@ end
     (1, 4, 4)
 end
 
-"""Report selected kernel, vector width, and micro-panel dimensions."""
+"""
+    kernel_info(::Type{T}=Float64; kernel=:auto)
+
+Report selected kernel, vector width, and micro-panel dimensions.
+"""
 function kernel_info(::Type{T}=Float64; kernel=:auto) where T
     kind = _kernel_kind(kernel)
     w, r, nr = _shape(T, kind)

@@ -176,7 +176,11 @@ function _validate_iteration_budget(maxiter)
     nothing
 end
 
-"""Eigenpairs of a real symmetric tridiagonal, sorted ascending; implicit QR."""
+"""
+    eigen_tridiagonal(diagonal::AbstractVector{R}, offdiagonal::AbstractVector{R}; vectors=true, maxiter=100max(1,length(diagonal))) -> EigenFactor
+
+Eigenpairs of a real symmetric tridiagonal, sorted ascending; implicit QR.
+"""
 function eigen_tridiagonal(diagonal::AbstractVector{R},offdiagonal::AbstractVector{R};
                            vectors=true,maxiter=100max(1,length(diagonal))) where {R<:AbstractFloat}
     Base.require_one_based_indexing(diagonal,offdiagonal)

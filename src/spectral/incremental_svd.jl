@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Mutable, rank-capped native SVD state for appending rows or columns.
+"""
+    IncrementalSVDFactor{T,R}
+
+Mutable, rank-capped native SVD state for appending rows or columns.
 Updates factor the stored approximation augmented with the new block; discarded
 directions from earlier updates cannot be recovered. Use svd_snapshot for a
 coherent independent copy while other tasks may update this state.
@@ -25,7 +28,11 @@ mutable struct IncrementalSVDFactor{T,R}
 end
 Base.eltype(::Type{IncrementalSVDFactor{T,R}}) where {T,R}=T
 Base.size(F::IncrementalSVDFactor)=lock(()->F.shape,F.guard)
-"""Current retained rank, read under the state guard without copying factors."""
+"""
+    svd_rank(F::IncrementalSVDFactor) -> Int
+
+Current retained rank, read under the state guard without copying factors.
+"""
 svd_rank(F::IncrementalSVDFactor)=lock(()->length(F.S),F.guard)
 function Base.size(F::IncrementalSVDFactor,d::Integer)
     d>0 || throw(ArgumentError("dimension must be positive"))
@@ -63,7 +70,10 @@ function _isvd_count(S,cap,ranktol)
 end
 _isvd_default_rank(A)=A isa NativeSparse ? min(16,min(size(A)...)) : min(size(A)...)
 
-"""Initialize a native incremental SVD. maxrank defaults to the requested rank,
+"""
+    incremental_svd(A; rank=..., maxrank=rank, method=:auto, kwargs...) -> IncrementalSVDFactor
+
+Initialize a native incremental SVD. maxrank defaults to the requested rank,
 so increasing the retained rank later requires a larger explicit cap here.
 Dense input defaults to :jacobi and also accepts :randomized; sparse input
 defaults to :randomized (at most rank 16 unless requested) and accepts :lanczos.
@@ -107,7 +117,10 @@ function incremental_svd(A::AbstractMatrix{T};rank::Integer=_isvd_default_rank(A
                          rank==0 ? :zero : selected,0,trunc,zero(R),ReentrantLock(),false)
 end
 
-"""Replace a state's initial matrix, preserving its cap/tolerances/options.
+"""
+    initialize_svd!(F::IncrementalSVDFactor, A; rank=..., kwargs...) -> F
+
+Replace a state's initial matrix, preserving its cap/tolerances/options.
 On success resets the update count; on failure leaves the old state intact.
 Initialization keywords such as method, seed and sketch sizes are forwarded.
 """
@@ -161,7 +174,10 @@ function _isvd_commit!(F,U,S,Vt,shape,truncation,projection)
     F
 end
 
-"""Append a p-by-n block of rows, always refactoring the coupling SVD even if
+"""
+    svd_add_rows!(F::IncrementalSVDFactor, rows; threaded=true) -> F
+
+Append a p-by-n block of rows, always refactoring the coupling SVD even if
 the residual block has rank zero. The input is copied under the state lock,
 so views of owned factor data are accepted without in-place corruption.
 """
@@ -199,7 +215,10 @@ function svd_add_rows!(F::IncrementalSVDFactor{T},rows::AbstractMatrix;threaded=
     end
 end
 
-"""Append an m-by-q column block, using a rank-revealing residual basis and a
+"""
+    svd_add_columns!(F::IncrementalSVDFactor, columns; threaded=true) -> F
+
+Append an m-by-q column block, using a rank-revealing residual basis and a
 native coupling SVD. A zero residual still changes singular values/vectors.
 """
 function svd_add_columns!(F::IncrementalSVDFactor{T},columns::AbstractMatrix;threaded=true) where T

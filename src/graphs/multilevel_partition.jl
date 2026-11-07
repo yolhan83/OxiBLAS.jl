@@ -174,7 +174,10 @@ function _partition_options(coarse_size,refine_passes,imbalance)
     coarse_size>=2 && refine_passes>=0 && isfinite(imbalance) && 0<=imbalance<1 || throw(ArgumentError("invalid multilevel partition options"))
 end
 
-"""Native recursive k-way multilevel partitioning. Heavy-edge contraction,
+"""
+    multilevel_partition(A, k=2; coarse_size=32, refine_passes=6, imbalance=0.1, kwargs...)
+
+Native recursive k-way multilevel partitioning. Heavy-edge contraction,
 BFS initial bisection, greedy moves/pair swaps or locked best-prefix FM
 (refinement=:fm) on uncoarsening. Default :greedy preserves the prior policy.
 No METIS-equivalent quality or balance guarantee is claimed: balanced reports
@@ -232,7 +235,10 @@ function _partition_leaf_order(G)
     n=length(G.weights)
     minimum_degree_ordering(CSRMatrix(COOMatrix(n,n,rows,cols,ones(Float64,length(rows)))))
 end
-"""Nested dissection using multilevel bisection and a greedy vertex cover of
+"""
+    multilevel_nested_dissection(A; leafsize=32, coarse_size=32, refine_passes=6, imbalance=0.1, kwargs...)
+
+Nested dissection using multilevel bisection and a greedy vertex cover of
 cross edges. Every reported separator removes all left/right cross edges.
 Leaf minimum-degree ordering is exact; separators need not be minimum size.
 return_tree=true exposes the separator tree for structural inspection.

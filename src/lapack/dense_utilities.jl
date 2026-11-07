@@ -30,8 +30,12 @@ function native_inverse(A::AbstractMatrix{T};threaded=true,kwargs...) where {T<:
     end
     result
 end
-"""Inverse of a Hermitian positive definite matrix from its Cholesky factor
-(LAPACK potri): inv(A)=inv(L)'*inv(L), returned as a full Hermitian matrix."""
+"""
+    cholesky_inverse(F::CholeskyFactor{T}; threaded=true) -> Matrix{T}
+
+Inverse of a Hermitian positive definite matrix from its Cholesky factor
+(LAPACK potri): inv(A)=inv(L)'*inv(L), returned as a full Hermitian matrix.
+"""
 function cholesky_inverse(F::CholeskyFactor{T};threaded=true) where {T<:GenericFloat}
     threaded=threaded && generic_threadsafe(T)
     n=size(F.L,1); X=copy(F.L)
