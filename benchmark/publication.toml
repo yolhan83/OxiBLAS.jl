@@ -3,7 +3,7 @@
 
 [snapshot]
 title = "Apple Silicon Benchmarks (Apple M4 Max)"
-revision = "5ad0aa6"
+revision = "bbd821c"
 
 # Products & BLAS 3
 [[campaigns]]
@@ -39,7 +39,7 @@ csv = "results/20261107_184411.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_183016.csv"
+csv = "results/20261107_213257.csv"
 
 # Tensors (einsum, einsum!)
 [[campaigns]]
@@ -57,4 +57,4 @@ csv = "results/20261107_170512.csv"
 
 [[campaigns]]
 threads = 17
-csv = "results/20261107_164200.csv"
+csv = "results/20261107_220350.csv"
