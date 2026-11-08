@@ -362,9 +362,57 @@ end
 
 # tri restricts the update to C's upper (1) or lower (2) triangle, as in
 # SYRK/HERK/GEMMT: micro tiles outside it are skipped, and tiles crossing the
+@inline function _call_simd_micro!(c::Ptr{T}, ldc::Int, a::Ptr{T}, b::Ptr{T}, k::Int, α::T, β::T, w::Int, r::Int, nr::Int) where {T<:RealFloat}
+    if w == 2 && r == 4 && nr == 6
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(2), Val(4), Val(6))
+    elseif w == 4 && r == 2 && nr == 8
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(4), Val(2), Val(8))
+    elseif w == 4 && r == 2 && nr == 6
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(4), Val(2), Val(6))
+    elseif w == 8 && r == 2 && nr == 6
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(8), Val(2), Val(6))
+    elseif w == 8 && r == 1 && nr == 8
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(8), Val(1), Val(8))
+    elseif w == 16 && r == 1 && nr == 16
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(16), Val(1), Val(16))
+    else
+        _simd_micro!(c, ldc, a, b, k, α, β, Val(1), Val(4), Val(4))
+    end
+end
+
+@inline function _call_simd_complex_micro!(c::Ptr{T}, ldc::Int, a::Ptr{T}, b::Ptr{T}, k::Int, α::T, β::T, w::Int, r::Int, nr::Int) where {T<:Complex}
+    if w == 1 && r == 4 && nr == 3
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(1), Val(4), Val(3))
+    elseif w == 2 && r == 2 && nr == 4
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(2), Val(2), Val(4))
+    elseif w == 2 && r == 2 && nr == 3
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(2), Val(2), Val(3))
+    elseif w == 4 && r == 2 && nr == 6
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(4), Val(2), Val(6))
+    elseif w == 4 && r == 1 && nr == 4
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(4), Val(1), Val(4))
+    elseif w == 8 && r == 1 && nr == 8
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(8), Val(1), Val(8))
+    else
+        _simd_complex_micro!(c, ldc, a, b, k, α, β, Val(1), Val(4), Val(4))
+    end
+end
+
+@inline function _call_register_micro!(C::AbstractMatrix{T}, ic, jc, a::Ptr{T}, b::Ptr{T}, k, α, β, mr::Int, nr::Int) where T
+    if mr == 8 && nr == 6
+        _register_micro!(C, ic, jc, a, b, k, α, β, Val(8), Val(6))
+    elseif mr == 8 && nr == 8
+        _register_micro!(C, ic, jc, a, b, k, α, β, Val(8), Val(8))
+    elseif mr == 4 && nr == 3
+        _register_micro!(C, ic, jc, a, b, k, α, β, Val(4), Val(3))
+    else
+        _register_micro!(C, ic, jc, a, b, k, α, β, Val(4), Val(4))
+    end
+end
+
 # diagonal go through the edge scratch tile (tri requires algorithm :simd).
 function _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
-                         ::Val{W},::Val{R},::Val{N},algorithm,edge=nothing,tri=0) where {T,W,R,N}
+                         W::Int,R::Int,N::Int,algorithm,edge=nothing,tri=0) where T
     mr,nr=W*R,N
     k=size(A,2)
     # Edge tiles: panels are zero padded, so the full SIMD tile is computed
@@ -400,8 +448,8 @@ function _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
                         end
                         if crossing
                             ep=pointer(edge)
-                            T<:Complex ? _simd_complex_micro!(ep,mr,aa,bb,kb,α,zero(T),Val(W),Val(R),Val(N)) :
-                                         _simd_micro!(ep,mr,aa,bb,kb,α,zero(T),Val(W),Val(R),Val(N))
+                            T<:Complex ? _call_simd_complex_micro!(ep,mr,aa,bb,kb,α,zero(T),W,R,N) :
+                                         _call_simd_micro!(ep,mr,aa,bb,kb,α,zero(T),W,R,N)
                             @inbounds for j in 1:nj, i in 1:mi
                                 ci,cj=i0+i-1,j0+j-1
                                 (tri==1 ? ci<=cj : ci>=cj) || continue
@@ -410,16 +458,16 @@ function _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
                             end
                         elseif mi==mr && nj==nr && algorithm===:simd && T <: RealFloat && W>1 && _can_pointer(C)
                             cp=pointer(C)+((ic+ii-1)+(jc+jj-1)*stride(C,2))*sizeof(T)
-                            _simd_micro!(cp,stride(C,2),aa,bb,kb,α,bp,Val(W),Val(R),Val(N))
+                            _call_simd_micro!(cp,stride(C,2),aa,bb,kb,α,bp,W,R,N)
                         elseif mi==mr && nj==nr && algorithm===:simd && T <: Complex && _can_pointer(C)
                             cp=pointer(C)+((ic+ii-1)+(jc+jj-1)*stride(C,2))*sizeof(T)
-                            _simd_complex_micro!(cp,stride(C,2),aa,bb,kb,α,bp,Val(W),Val(R),Val(N))
+                            _call_simd_complex_micro!(cp,stride(C,2),aa,bb,kb,α,bp,W,R,N)
                         elseif mi==mr && nj==nr && algorithm===:register
-                            _register_micro!(C,ic+ii,jc+jj,aa,bb,kb,α,bp,Val(mr),Val(nr))
+                            _call_register_micro!(C,ic+ii,jc+jj,aa,bb,kb,α,bp,mr,nr)
                         elseif edge!==nothing
                             ep=pointer(edge)
-                            T<:Complex ? _simd_complex_micro!(ep,mr,aa,bb,kb,α,zero(T),Val(W),Val(R),Val(N)) :
-                                         _simd_micro!(ep,mr,aa,bb,kb,α,zero(T),Val(W),Val(R),Val(N))
+                            T<:Complex ? _call_simd_complex_micro!(ep,mr,aa,bb,kb,α,zero(T),W,R,N) :
+                                         _call_simd_micro!(ep,mr,aa,bb,kb,α,zero(T),W,R,N)
                             @inbounds for j in 1:nj, i in 1:mi
                                 v=edge[i,j]; ci,cj=ic+ii+i-1,jc+jj+j-1
                                 # bp=0 must not read C.
@@ -436,8 +484,8 @@ function _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
     C
 end
 _packed_region!(C::AbstractMatrix{T},A,B,α,β,buf,config,rows,cols,
-                ::Val{W},::Val{R},::Val{N},algorithm,tri::Integer) where {T,W,R,N} =
-    _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(W),Val(R),Val(N),algorithm,nothing,tri)
+                W::Int,R::Int,N::Int,algorithm,tri::Integer) where T =
+    _packed_region!(C,A,B,α,β,buf,config,rows,cols,W,R,N,algorithm,nothing,tri)
 
 function _workspace_fits(w::GemmWorkspace,m,n,k,config,mr,nr)
     !isempty(w.buffers) && w.acap>=cld(min(m,config.mc),mr)*mr*min(k,config.kc) && w.bcap>=cld(min(n,config.nc),nr)*nr*min(k,config.kc)
@@ -459,17 +507,24 @@ function _workspace_check(w::GemmWorkspace{T},m,n,k,config,mr,nr) where T
     end
     nothing
 end
-function _workspace_operands_check(w::GemmWorkspace,operands...;tiles=false)
-    for buffer in w.buffers,A in operands
-        (Base.mightalias(buffer.a,A) || Base.mightalias(buffer.b,A)) && throw(ArgumentError("operand aliases owned packing storage"))
+@inline function _check_operand_alias(w::GemmWorkspace, A, check_tiles::Bool)
+    for buffer in w.buffers
+        (Base.mightalias(buffer.a, A) || Base.mightalias(buffer.b, A)) && throw(ArgumentError("operand aliases owned packing storage"))
     end
-    if tiles
-        for tile in w.tiles,A in operands
-            Base.mightalias(tile,A) && throw(ArgumentError("operand aliases owned triangular tile storage"))
+    if check_tiles
+        for tile in w.tiles
+            Base.mightalias(tile, A) && throw(ArgumentError("operand aliases owned triangular tile storage"))
         end
     end
-    for tile in w.edge_tiles,A in operands
-        Base.mightalias(tile,A) && throw(ArgumentError("operand aliases owned edge tile storage"))
+    for tile in w.edge_tiles
+        Base.mightalias(tile, A) && throw(ArgumentError("operand aliases owned edge tile storage"))
+    end
+    nothing
+end
+
+function _workspace_operands_check(w::GemmWorkspace,operands...;tiles=false)
+    foreach(operands) do A
+        _check_operand_alias(w, A, tiles)
     end
     nothing
 end
@@ -533,34 +588,22 @@ function _run_packed!(C,A,B,α,β,w,config,shape,algorithm,threaded,tri=0)
         if needs_edge
             edge_tiles=_workspace_edge_tiles!(w,nt,mr,nr)
             if nt<=1
-                _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,Val(width),Val(r),Val(nr),algorithm,edge_tiles[1],tri)
+                _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,width,r,nr,algorithm,edge_tiles[1],tri)
             else
-                @sync begin
-                    for worker in 2:nt
-                        rows,cols=region(worker)
-                        (isempty(rows) || isempty(cols)) && continue
-                        let buf=w.buffers[worker], rows=rows, cols=cols, edge=edge_tiles[worker]
-                            Threads.@spawn _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(width),Val(r),Val(nr),algorithm,edge,tri)
-                        end
-                    end
-                    rows,cols=region(1)
-                    isempty(rows) || isempty(cols) || _packed_region!(C,A,B,α,β,w.buffers[1],config,rows,cols,Val(width),Val(r),Val(nr),algorithm,edge_tiles[1],tri)
+                Threads.@threads for worker in 1:nt
+                    rows,cols=region(worker)
+                    (isempty(rows) || isempty(cols)) && continue
+                    _packed_region!(C,A,B,α,β,w.buffers[worker],config,rows,cols,width,r,nr,algorithm,edge_tiles[worker],tri)
                 end
             end
         else
             if nt<=1
-                _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,Val(width),Val(r),Val(nr),algorithm,nothing,tri)
+                _packed_region!(C,A,B,α,β,w.buffers[1],config,1:m,1:n,width,r,nr,algorithm,nothing,tri)
             else
-                @sync begin
-                    for worker in 2:nt
-                        rows,cols=region(worker)
-                        (isempty(rows) || isempty(cols)) && continue
-                        let buf=w.buffers[worker], rows=rows, cols=cols
-                            Threads.@spawn _packed_region!(C,A,B,α,β,buf,config,rows,cols,Val(width),Val(r),Val(nr),algorithm,nothing,tri)
-                        end
-                    end
-                    rows,cols=region(1)
-                    isempty(rows) || isempty(cols) || _packed_region!(C,A,B,α,β,w.buffers[1],config,rows,cols,Val(width),Val(r),Val(nr),algorithm,nothing,tri)
+                Threads.@threads for worker in 1:nt
+                    rows,cols=region(worker)
+                    (isempty(rows) || isempty(cols)) && continue
+                    _packed_region!(C,A,B,α,β,w.buffers[worker],config,rows,cols,width,r,nr,algorithm,nothing,tri)
                 end
             end
         end
@@ -596,10 +639,36 @@ function gemm!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},
     # Concrete operand types for the usual untransposed call: _op returns a
     # Union (A, transpose, adjoint) and union-typed operands captured by the
     # closures below were boxed at every call.
-    if _trans_kind(transA)==0 && _trans_kind(transB)==0
+    if transA === :N && transB === :N
         return _gemm_ops!(C,A,B,α0,β0,algorithm,kernel,threaded,workspace,config)
     end
-    _gemm_ops!(C,_op(A,transA),_op(B,transB),α0,β0,algorithm,kernel,threaded,workspace,config)
+    kA = _trans_kind(transA)
+    kB = _trans_kind(transB)
+    if kA == 0
+        if kB == 1
+            return _gemm_ops!(C, A, transpose(B), α0, β0, algorithm, kernel, threaded, workspace, config)
+        elseif kB == 2
+            return _gemm_ops!(C, A, adjoint(B), α0, β0, algorithm, kernel, threaded, workspace, config)
+        else
+            return _gemm_ops!(C, A, B, α0, β0, algorithm, kernel, threaded, workspace, config)
+        end
+    elseif kA == 1
+        if kB == 0
+            return _gemm_ops!(C, transpose(A), B, α0, β0, algorithm, kernel, threaded, workspace, config)
+        elseif kB == 1
+            return _gemm_ops!(C, transpose(A), transpose(B), α0, β0, algorithm, kernel, threaded, workspace, config)
+        else
+            return _gemm_ops!(C, transpose(A), adjoint(B), α0, β0, algorithm, kernel, threaded, workspace, config)
+        end
+    else
+        if kB == 0
+            return _gemm_ops!(C, adjoint(A), B, α0, β0, algorithm, kernel, threaded, workspace, config)
+        elseif kB == 1
+            return _gemm_ops!(C, adjoint(A), transpose(B), α0, β0, algorithm, kernel, threaded, workspace, config)
+        else
+            return _gemm_ops!(C, adjoint(A), adjoint(B), α0, β0, algorithm, kernel, threaded, workspace, config)
+        end
+    end
 end
 function _gemm_ops!(C::AbstractMatrix{T},Aop,Bop,α0,β0,algorithm,kernel,threaded,workspace,config) where T
     m,n,k=_gemm_dims(C,Aop,Bop)

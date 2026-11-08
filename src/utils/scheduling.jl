@@ -5,10 +5,8 @@
 function _foreach_range(f,n,workers)
     workers=min(n,workers)
     workers<=1 && return f(1:n,1)
-    @sync for worker in 1:workers
-        let worker=worker
-            Threads.@spawn f(_task_range(n,worker,workers),worker)
-        end
+    Threads.@threads for worker in 1:workers
+        f(_task_range(n,worker,workers),worker)
     end
     nothing
 end

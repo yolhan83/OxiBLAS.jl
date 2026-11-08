@@ -25,6 +25,10 @@ end
 symm!(C,A,B,α=one(eltype(C)),β=zero(eltype(C));side=:L,uplo=:U,kwargs...)=_symm!(C,A,B,α,β,side,uplo,false;kwargs...)
 hemm!(C,A,B,α=one(eltype(C)),β=zero(eltype(C));side=:L,uplo=:U,kwargs...)=_symm!(C,A,B,α,β,side,uplo,true;kwargs...)
 
+@inline function _l3_gemm!(C, A, B, α, β, options)
+    _gemm_ops!(C, A, B, α, β, options.algorithm, options.kernel, options.threaded, options.workspace, options.config)
+end
+
 function _l3_validate(C,algorithm,kernel,blocksize)
     Base.require_one_based_indexing(C)
     _check_output_layout(C)
@@ -34,7 +38,24 @@ function _l3_validate(C,algorithm,kernel,blocksize)
 end
 
 # A single pair of packing panels is reused throughout a structured operation.
-function _l3_options(::Type{T},m,n,k,algorithm,kernel,threaded,workspace,config;workers=threaded ? Threads.nthreads() : 1) where T
+@inline function _l3_options(::Type{T},m,n,k,algorithm,kernel,threaded,workspace::Nothing,config;workers=threaded ? Threads.nthreads() : 1) where T
+    if algorithm === :reference || algorithm === :blocked
+        return (;algorithm,kernel,threaded,workspace=nothing,config)
+    else
+        w = GemmWorkspace(T,m,n,k;config,workers)
+        width,r,nr=_shape(T,_kernel_kind(kernel))
+        _workspace_check(w,m,n,k,config,width*r,nr)
+        return (;algorithm,kernel,threaded,workspace=w,config)
+    end
+end
+
+@inline function _l3_options(::Type{T},m,n,k,algorithm,kernel,threaded,workspace::GemmWorkspace{T},config;workers=threaded ? Threads.nthreads() : 1) where T
+    width,r,nr=_shape(T,_kernel_kind(kernel))
+    _workspace_check(workspace,m,n,k,config,width*r,nr)
+    return (;algorithm,kernel,threaded,workspace,config)
+end
+
+@inline function _l3_options(::Type{T},m,n,k,algorithm,kernel,threaded,workspace,config;workers=threaded ? Threads.nthreads() : 1) where T
     w=workspace
     if !(algorithm in (:reference,:blocked))
         w===nothing && (w=GemmWorkspace(T,m,n,k;config,workers))
@@ -106,11 +127,11 @@ function _trmm_blocks_left!(B,A,α,upper,unit,bs,options)
     B2=view(B,hi,:)
     if upper
         _trmm_blocks_left!(B1,A1,α,upper,unit,bs,options)
-        gemm!(B1,view(A,lo,hi),B2,α,one(α);options...)
+        _l3_gemm!(B1,view(A,lo,hi),B2,α,one(α),options)
         _trmm_blocks_left!(B2,A2,α,upper,unit,bs,options)
     else
         _trmm_blocks_left!(B2,A2,α,upper,unit,bs,options)
-        gemm!(B2,view(A,hi,lo),B1,α,one(α);options...)
+        _l3_gemm!(B2,view(A,hi,lo),B1,α,one(α),options)
         _trmm_blocks_left!(B1,A1,α,upper,unit,bs,options)
     end
     B
@@ -125,11 +146,11 @@ function _trmm_blocks_right!(B,A,α,upper,unit,bs,options)
     B2=view(B,:,hi)
     if upper
         _trmm_blocks_right!(B2,A2,α,upper,unit,bs,options)
-        gemm!(B2,B1,view(A,lo,hi),α,one(α);options...)
+        _l3_gemm!(B2,B1,view(A,lo,hi),α,one(α),options)
         _trmm_blocks_right!(B1,A1,α,upper,unit,bs,options)
     else
         _trmm_blocks_right!(B1,A1,α,upper,unit,bs,options)
-        gemm!(B1,B2,view(A,hi,lo),α,one(α);options...)
+        _l3_gemm!(B1,B2,view(A,hi,lo),α,one(α),options)
         _trmm_blocks_right!(B2,A2,α,upper,unit,bs,options)
     end
     B
@@ -324,11 +345,11 @@ function _trsm_blocks_left!(B,A,upper,unit,bs,options)
     α=one(eltype(B))
     if upper
         _trsm_blocks_left!(B2,A2,upper,unit,bs,options)
-        gemm!(B1,view(A,lo,hi),B2,-α,α;options...)
+        _l3_gemm!(B1,view(A,lo,hi),B2,-α,α,options)
         _trsm_blocks_left!(B1,A1,upper,unit,bs,options)
     else
         _trsm_blocks_left!(B1,A1,upper,unit,bs,options)
-        gemm!(B2,view(A,hi,lo),B1,-α,α;options...)
+        _l3_gemm!(B2,view(A,hi,lo),B1,-α,α,options)
         _trsm_blocks_left!(B2,A2,upper,unit,bs,options)
     end
     B
@@ -344,11 +365,11 @@ function _trsm_blocks_right!(B,A,upper,unit,bs,options)
     α=one(eltype(B))
     if upper
         _trsm_blocks_right!(B1,A1,upper,unit,bs,options)
-        gemm!(B2,B1,view(A,lo,hi),-α,α;options...)
+        _l3_gemm!(B2,B1,view(A,lo,hi),-α,α,options)
         _trsm_blocks_right!(B2,A2,upper,unit,bs,options)
     else
         _trsm_blocks_right!(B2,A2,upper,unit,bs,options)
-        gemm!(B1,B2,view(A,hi,lo),-α,α;options...)
+        _l3_gemm!(B1,B2,view(A,hi,lo),-α,α,options)
         _trsm_blocks_right!(B1,A1,upper,unit,bs,options)
     end
     B
@@ -567,8 +588,8 @@ function _triangle_tile!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,til
     n=size(C,1); cols=jc:min(n,jc+bs-1); rows=ic:min(n,ic+bs-1)
     diagonal=ic==jc
     out=diagonal ? view(tile,1:length(rows),1:length(cols)) : view(C,rows,cols)
-    gemm!(out,view(A,rows,:),view(B,:,cols),α,diagonal ? zero(β) : β;options...)
-    rank2 && gemm!(out,view(D,rows,:),view(E,:,cols),γ,one(β);options...)
+    _l3_gemm!(out,view(A,rows,:),view(B,:,cols),α,diagonal ? zero(β) : β,options)
+    rank2 && _l3_gemm!(out,view(D,rows,:),view(E,:,cols),γ,one(β),options)
     if diagonal
         @inbounds for j in eachindex(cols), i in (upper ? (1:j) : (j:length(rows)))
             ii,jj=rows[i],cols[j]
@@ -588,31 +609,38 @@ function _triangle_task!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,til
     nothing
 end
 
-function _triangle_parallel!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,workers)
-    n=size(C,1); w=options.workspace
-    # Buffer ownership follows the task, not threadid(). The parent guard
-    # excludes other calls sharing w for the entire tile schedule. Children
-    # lock their own single-buffer wrapper and never re-enter the parent lock.
-    if w isa GemmWorkspace
-        _workspace_operands_check(w,C,A,B,D,E;tiles=true)
-        if w.jobkey!=(n,bs,upper)
-            empty!(w.jobs); append!(w.jobs,_triangle_jobs(n,bs,upper)); w.jobkey=(n,bs,upper)
-        end
-        jobs=w.jobs
-        children=_workspace_children!(w,workers)
-        tiles=_workspace_tiles!(w,workers,min(bs,n))
-    else
-        jobs=_triangle_jobs(n,bs,upper)
-        children=fill(nothing,workers)
-        tiles=[Matrix{eltype(C)}(undef,min(bs,n),min(bs,n)) for _ in 1:workers]
+function _triangle_parallel_ws!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,w::GemmWorkspace,workers)
+    n=size(C,1)
+    _workspace_operands_check(w,C,A,B,D,E;tiles=true)
+    if w.jobkey!=(n,bs,upper)
+        empty!(w.jobs); append!(w.jobs,_triangle_jobs(n,bs,upper)); w.jobkey=(n,bs,upper)
     end
-    # jobs is assigned in both branches: rebound before the spawned closures.
-    @sync for worker in 1:workers
-        let worker=worker, opts=merge(options,(;workspace=children[worker],threaded=false)), tile=tiles[worker], jobs=jobs
-            Threads.@spawn _triangle_task!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,opts,tile,jobs,worker,workers)
-        end
+    jobs=w.jobs
+    children=_workspace_children!(w,workers)
+    tiles=_workspace_tiles!(w,workers,min(bs,n))
+    Threads.@threads for worker in 1:workers
+        opts=merge(options,(;workspace=children[worker],threaded=false))
+        tile=tiles[worker]
+        _triangle_task!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,opts,tile,jobs,worker,workers)
     end
     C
+end
+
+function _triangle_parallel_ws!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,w,workers)
+    n=size(C,1)
+    jobs=_triangle_jobs(n,bs,upper)
+    children=fill(nothing,workers)
+    tiles=[Matrix{eltype(C)}(undef,min(bs,n),min(bs,n)) for _ in 1:workers]
+    Threads.@threads for worker in 1:workers
+        opts=merge(options,(;workspace=children[worker],threaded=false))
+        tile=tiles[worker]
+        _triangle_task!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,opts,tile,jobs,worker,workers)
+    end
+    C
+end
+
+function _triangle_parallel!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,workers)
+    _triangle_parallel_ws!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options,options.workspace,workers)
 end
 
 function _triangle_products!(C,A,B,D,E,α,γ,β,upper,hermitian,rank2,bs,options)
@@ -678,27 +706,76 @@ function _triangle_packed!(C::AbstractMatrix{T},A,B,D,E,α,γ,β,upper,hermitian
     C
 end
 
+@inline function _rankk_core!(C::AbstractMatrix{T},aa,rhs,bb,rhs2,α::T,γ::T,β::T,upper::Bool,hermitian::Bool,rank2::Bool,
+                              blocksize::Int,algorithm::Symbol,kernel::Symbol,threaded::Bool,workspace,config::GemmConfig) where {T<:NativeFloat}
+    n=_square(C)
+    n<=16 && return _triangle_leaf!(C,aa,rhs,bb,rhs2,α,γ,β,upper,hermitian,rank2)
+    _triangle_packed!(C,aa,rhs,bb,rhs2,α,γ,β,upper,hermitian,rank2,algorithm,kernel,threaded,workspace,config)===nothing || return C
+    options=_l3_options(T,min(blocksize,n),min(blocksize,n),size(aa,2),algorithm,kernel,threaded,workspace,config)
+    _triangle_products!(C,aa,rhs,bb,rhs2,α,γ,β,upper,hermitian,rank2,blocksize,options)
+end
+
 function _rankk!(C::AbstractMatrix{T},A::AbstractMatrix{T},B::AbstractMatrix{T},α,β,uplo,trans,hermitian,rank2;
                  blocksize=128,algorithm=:auto,kernel=:auto,threaded=true,workspace=nothing,config=GemmConfig(T)) where {T<:NativeFloat}
     n=_square(C); upper=_uplo(uplo)
     hermitian && !(trans in (:N,'N',:C,'C')) && throw(ArgumentError("Hermitian rank-k accepts N or C"))
     !hermitian && !(trans in (:N,'N',:T,'T')) && throw(ArgumentError("symmetric rank-k accepts N or T"))
     hermitian && (!isreal(β) || (!rank2 && !isreal(α))) && throw(ArgumentError("HERK alpha/beta and HER2K beta must be real"))
-    aa=_op(A,trans); bb=_op(B,trans)
-    Base.require_one_based_indexing(aa,bb)
-    size(aa,1)==n && size(bb)==size(aa) || throw(DimensionMismatch("rank-k dimensions differ"))
+    Base.require_one_based_indexing(A,B)
     _l3_validate(C,algorithm,kernel,blocksize)
-    α,β=convert(T,α),convert(T,β)
-    (iszero(α) || size(aa,2)==0 || n==0) && return _triangle_scale!(C,β,upper,hermitian)
-    aa=Base.mightalias(C,aa) ? copy(aa) : aa
-    bb=A===B ? aa : (Base.mightalias(C,bb) ? copy(bb) : bb)
-    rhs=hermitian ? adjoint(bb) : transpose(bb)
-    rhs2=hermitian ? adjoint(aa) : transpose(aa)
-    γ=hermitian ? conj(α) : α
-    n<=16 && return _triangle_leaf!(C,aa,rhs,bb,rhs2,α,γ,β,upper,hermitian,rank2)
-    _triangle_packed!(C,aa,rhs,bb,rhs2,α,γ,β,upper,hermitian,rank2,algorithm,kernel,threaded,workspace,config)===nothing || return C
-    options=_l3_options(T,min(blocksize,n),min(blocksize,n),size(aa,2),algorithm,kernel,threaded,workspace,config)
-    _triangle_products!(C,aa,rhs,bb,rhs2,α,γ,β,upper,hermitian,rank2,blocksize,options)
+    α_t,β_t=convert(T,α),convert(T,β)
+    γ_t=hermitian ? conj(α_t) : α_t
+    if trans in (:N, 'N')
+        size(A,1)==n && size(B)==size(A) || throw(DimensionMismatch("rank-k dimensions differ"))
+        (iszero(α_t) || size(A,2)==0 || n==0) && return _triangle_scale!(C,β_t,upper,hermitian)
+        if !Base.mightalias(C,A) && !Base.mightalias(C,B)
+            if hermitian
+                rhs_adj = A===B ? adjoint(A) : adjoint(B)
+                rhs2_adj = A===B ? rhs_adj : adjoint(A)
+                return _rankk_core!(C,A,rhs_adj,B,rhs2_adj,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+            else
+                rhs_tra = A===B ? transpose(A) : transpose(B)
+                rhs2_tra = A===B ? rhs_tra : transpose(A)
+                return _rankk_core!(C,A,rhs_tra,B,rhs2_tra,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+            end
+        else
+            aa_c = Base.mightalias(C,A) ? copy(A) : copy(A)
+            bb_c = A===B ? aa_c : (Base.mightalias(C,B) ? copy(B) : copy(B))
+            if hermitian
+                rhs_h = adjoint(bb_c); rhs2_h = A===B ? rhs_h : adjoint(aa_c)
+                return _rankk_core!(C,aa_c,rhs_h,bb_c,rhs2_h,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+            else
+                rhs_s = transpose(bb_c); rhs2_s = A===B ? rhs_s : transpose(aa_c)
+                return _rankk_core!(C,aa_c,rhs_s,bb_c,rhs2_s,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+            end
+        end
+    elseif trans in (:C, 'C')
+        A_adj = adjoint(A); B_adj = adjoint(B)
+        size(A_adj,1)==n && size(B_adj)==size(A_adj) || throw(DimensionMismatch("rank-k dimensions differ"))
+        (iszero(α_t) || size(A_adj,2)==0 || n==0) && return _triangle_scale!(C,β_t,upper,hermitian)
+        if !Base.mightalias(C,A_adj) && !Base.mightalias(C,B_adj)
+            rhs_h2 = A===B ? A : B
+            rhs2_h2 = A===B ? rhs_h2 : A
+            return _rankk_core!(C,A_adj,rhs_h2,B_adj,rhs2_h2,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+        else
+            aa_c2 = copy(A_adj); bb_c2 = A===B ? aa_c2 : copy(B_adj)
+            rhs_h3 = adjoint(bb_c2); rhs2_h3 = A===B ? rhs_h3 : adjoint(aa_c2)
+            return _rankk_core!(C,aa_c2,rhs_h3,bb_c2,rhs2_h3,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+        end
+    else
+        A_tra = transpose(A); B_tra = transpose(B)
+        size(A_tra,1)==n && size(B_tra)==size(A_tra) || throw(DimensionMismatch("rank-k dimensions differ"))
+        (iszero(α_t) || size(A_tra,2)==0 || n==0) && return _triangle_scale!(C,β_t,upper,hermitian)
+        if !Base.mightalias(C,A_tra) && !Base.mightalias(C,B_tra)
+            rhs_s2 = A===B ? A : B
+            rhs2_s2 = A===B ? rhs_s2 : A
+            return _rankk_core!(C,A_tra,rhs_s2,B_tra,rhs2_s2,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+        else
+            aa_c3 = copy(A_tra); bb_c3 = A===B ? aa_c3 : copy(B_tra)
+            rhs_s3 = transpose(bb_c3); rhs2_s3 = A===B ? rhs_s3 : transpose(aa_c3)
+            return _rankk_core!(C,aa_c3,rhs_s3,bb_c3,rhs2_s3,α_t,γ_t,β_t,upper,hermitian,rank2,blocksize,algorithm,kernel,threaded,workspace,config)
+        end
+    end
 end
 syrk!(C,A,α=one(eltype(C)),β=zero(eltype(C));uplo=:U,trans=:N,kwargs...)=_rankk!(C,A,A,α,β,uplo,trans,false,false;kwargs...)
 syr2k!(C,A,B,α=one(eltype(C)),β=zero(eltype(C));uplo=:U,trans=:N,kwargs...)=_rankk!(C,A,B,α,β,uplo,trans,false,true;kwargs...)

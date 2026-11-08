@@ -208,11 +208,7 @@ function _trmm_leaf!(B::AbstractMatrix{T},A,alpha,left::Bool,upper::Bool,unit::B
 end
 function _trmm_leaf!(B::StridedMatrix{T},A,alpha,left::Bool,upper::Bool,unit::Bool,kernel::Symbol,optimized::Bool) where {T<:NativeFloat}
     (!optimized || stride(B,1)!=1) && return _trmm_leaf_generic!(B,A,alpha,left,upper,unit)
-    left && T<:RealFloat && size(B,1)<=8 && return _tri_left_small!(B,A,alpha,Val(size(B,1)),Val(upper),Val(unit),Val(false))
-    !left && T<:RealFloat && size(B,2)<=8 && return _tri_right_small!(B,A,alpha,Val(size(B,2)),Val(upper),Val(unit),Val(false))
     left && size(B,2)>=4 && return _tri_left4!(B,A,alpha,upper,unit,false)
-    kind=_kernel_kind(kernel); width=first(_shape(T,kind))
-    !left && _can_pointer(B) && kind!==:scalar && size(B,1)>=width && return _tri_right_simd!(B,A,alpha,upper,unit,false,Val(width))
     _trmm_leaf_generic!(B,A,alpha,left,upper,unit)
 end
 _trmm_leaf!(B::AbstractMatrix{T},A,alpha,left,upper,unit;kernel=:auto,optimized=true) where {T<:NativeFloat} =
@@ -223,11 +219,7 @@ function _trsm_leaf!(B::AbstractMatrix{T},A,left::Bool,upper::Bool,unit::Bool,ke
 end
 function _trsm_leaf!(B::StridedMatrix{T},A,left::Bool,upper::Bool,unit::Bool,kernel::Symbol,optimized::Bool) where {T<:NativeFloat}
     (!optimized || stride(B,1)!=1) && return _trsm_leaf_generic!(B,A,left,upper,unit)
-    left && T<:RealFloat && size(B,1)<=8 && return _tri_left_small!(B,A,one(T),Val(size(B,1)),Val(upper),Val(unit),Val(true))
-    !left && T<:RealFloat && size(B,2)<=8 && return _tri_right_small!(B,A,one(T),Val(size(B,2)),Val(upper),Val(unit),Val(true))
     left && size(B,2)>=4 && return _tri_left4!(B,A,one(T),upper,unit,true)
-    kind=_kernel_kind(kernel); width=first(_shape(T,kind))
-    !left && _can_pointer(B) && kind!==:scalar && size(B,1)>=width && return _tri_right_simd!(B,A,one(T),upper,unit,true,Val(width))
     _trsm_leaf_generic!(B,A,left,upper,unit)
 end
 _trsm_leaf!(B::AbstractMatrix{T},A,left,upper,unit;kernel=:auto,optimized=true) where {T<:NativeFloat} =

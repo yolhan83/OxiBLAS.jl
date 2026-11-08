@@ -56,8 +56,9 @@
       cb(new Error('All candidates failed'));
       return;
     }
-    const url = urls[index];
-    fetch(url)
+    const rawUrl = urls[index];
+    const url = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+    fetch(url, { cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();

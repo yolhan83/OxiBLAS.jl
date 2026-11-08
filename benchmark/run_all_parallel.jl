@@ -11,9 +11,10 @@ const PUB_PATH = joinpath(ROOT, "benchmark", "publication.toml")
 const FAMILIES = [
     ("products", 2),
     ("factorizations", 4),
-    ("spectral", 8),
-    ("functions", 12),
     ("solves", 6),
+    ("spectral", 8),
+    ("tensors", 10),
+    ("functions", 12),
 ]
 
 function get_csv_files()
